@@ -333,6 +333,11 @@ std::string MessageHandler::AddRunwayToRoute(std::string runway, EuroScopePlugIn
 		if (route.find(procedure) != std::string::npos)
 		{
 			route = regex_replace(route, std::regex("(" + procedure + "|" + airport + ")" + "/?[0-3]?[0-9]?"), runwayAssignment);
+
+			#if _DEBUG
+			CEXCDSBridge::GetInstance()->DisplayUserMessage("EXCDS Bridge [DEBUG]", string("MOD ROUTE (" + string(fp.GetCallsign()) + ")").c_str(), route.c_str(), true, true, true, true, true);
+			#endif
+			
 			return route;
 		}
 	}
@@ -345,6 +350,12 @@ std::string MessageHandler::AddRunwayToRoute(std::string runway, EuroScopePlugIn
 		{
 			// Regex will replace the current airport, and any runway already with it.
 			route = regex_replace(route, std::regex("(" + airport + ")" + "/?[0-3]?[0-9]?"), runwayAssignment);
+			
+			#if _DEBUG
+			CEXCDSBridge::GetInstance()->DisplayUserMessage("EXCDS Bridge [DEBUG]", string("MOD ROUTE (" + string(fp.GetCallsign()) + ")").c_str(), route.c_str(), true, true, true, true, true);
+			#endif
+
+			return route;
 		}
 	}
 
