@@ -10,7 +10,7 @@
 #define PLUGIN_NAME		"EXCDS Bridge"
 #define PLUGIN_VERSION	"0.0.1-alpha"
 #define PLUGIN_AUTHOR	"Kolby Dunning / Liam Shaw (Frontend)"
-#define PLUGIN_LICENSE	"Attribution 4.0 International (CC BY 4.0)"
+#define PLUGIN_LICENSE	"Attribution-ShareAlike 4.0 International (CC BY-SA 4.0)"
 
 const std::string BRIDGE_HOST = "http://127.0.0.1";
 const std::string BRIDGE_PORT = "7500";
