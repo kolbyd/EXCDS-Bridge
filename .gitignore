@@ -445,3 +445,4 @@ FodyWeavers.xsd
 # Specific to this project
 EXCDSBridge/SectorFileProviderDescriptor.txt
 EXCDSBridge/version.txt
+EXCDSBridge/situWx/*

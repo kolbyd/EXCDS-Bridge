@@ -24,10 +24,10 @@ CEXCDSBridge* instance;
 CEXCDSBridge::CEXCDSBridge() :
 	EuroScopePlugIn::CPlugIn(
 		EuroScopePlugIn::COMPATIBILITY_CODE, 
-		"EXCDS Bridge", 
-		"0.0.1-alpha",
-		"Kolby Dunning / Liam Shaw (Frontend)", 
-		"Attribution 4.0 International (CC BY 4.0)"
+		PLUGIN_NAME, 
+		PLUGIN_VERSION,
+		PLUGIN_AUTHOR,
+		PLUGIN_LICENSE
 	)
 {
 	AFX_MANAGE_STATE(AfxGetStaticModuleState());
@@ -41,7 +41,7 @@ CEXCDSBridge::CEXCDSBridge() :
 	// Tell the program that we are connected
 	socketClient.socket()->emit("CONNECTED", sio::message::list("true"));
 
-	// TODO: Register for events
+	// Register for events
 	bind_events();
 }
 
