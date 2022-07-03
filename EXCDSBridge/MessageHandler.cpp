@@ -9,7 +9,6 @@
 
 #include "MessageHandler.h"
 
-using namespace std;
 using namespace sio;
 
 void MessageHandler::UpdateGroundStatus(sio::event& e)
@@ -26,7 +25,6 @@ void MessageHandler::UpdateGroundStatus(sio::event& e)
 
 	// Is the flight plan valid?
 	bool flightPlanValid = FlightPlanChecks(fp, response, e);
-	flightPlanValid = true;
 	if (!flightPlanValid) {
 		return;
 	}
@@ -76,7 +74,6 @@ void MessageHandler::UpdateClearance(sio::event& e)
 
 	// Is the flight plan valid?
 	bool flightPlanValid = FlightPlanChecks(fp, response, e);
-	flightPlanValid = true;
 	if (!flightPlanValid) {
 		return;
 	}
@@ -117,7 +114,6 @@ void MessageHandler::UpdateAltitude(sio::event& e)
 
 	// Is the flight plan valid?
 	bool flightPlanValid = FlightPlanChecks(fp, response, e);
-	flightPlanValid = true;
 	if (!flightPlanValid) {
 		return;
 	}
@@ -310,7 +306,7 @@ std::string MessageHandler::AddRunwayToRoute(std::string runway, EuroScopePlugIn
 {
 	std::string route = fp.GetFlightPlanData().GetRoute();
 	#if _DEBUG
-	CEXCDSBridge::GetInstance()->DisplayUserMessage("EXCDS Bridge [DEBUG]", string("ROUTE (" + string(fp.GetCallsign()) + ")").c_str(), route.c_str(), true, true, true, true, true);
+	CEXCDSBridge::GetInstance()->DisplayUserMessage("EXCDS Bridge [DEBUG]", std::string("ROUTE (" + std::string(fp.GetCallsign()) + ")").c_str(), route.c_str(), true, true, true, true, true);
 	#endif
 
 	// Store the SID or STAR depending on what we are looking for.
@@ -335,7 +331,7 @@ std::string MessageHandler::AddRunwayToRoute(std::string runway, EuroScopePlugIn
 			route = regex_replace(route, std::regex("(" + procedure + "|" + airport + ")" + "/?[0-3]?[0-9]?"), runwayAssignment);
 
 			#if _DEBUG
-			CEXCDSBridge::GetInstance()->DisplayUserMessage("EXCDS Bridge [DEBUG]", string("MOD ROUTE (" + string(fp.GetCallsign()) + ")").c_str(), route.c_str(), true, true, true, true, true);
+			CEXCDSBridge::GetInstance()->DisplayUserMessage("EXCDS Bridge [DEBUG]", std::string("MOD ROUTE (" + std::string(fp.GetCallsign()) + ")").c_str(), route.c_str(), true, true, true, true, true);
 			#endif
 			
 			return route;
@@ -352,7 +348,7 @@ std::string MessageHandler::AddRunwayToRoute(std::string runway, EuroScopePlugIn
 			route = regex_replace(route, std::regex("(" + airport + ")" + "/?[0-3]?[0-9]?"), runwayAssignment);
 			
 			#if _DEBUG
-			CEXCDSBridge::GetInstance()->DisplayUserMessage("EXCDS Bridge [DEBUG]", string("MOD ROUTE (" + string(fp.GetCallsign()) + ")").c_str(), route.c_str(), true, true, true, true, true);
+			CEXCDSBridge::GetInstance()->DisplayUserMessage("EXCDS Bridge [DEBUG]", std::string("MOD ROUTE (" + std::string(fp.GetCallsign()) + ")").c_str(), route.c_str(), true, true, true, true, true);
 			#endif
 
 			return route;
@@ -370,7 +366,7 @@ std::string MessageHandler::AddRunwayToRoute(std::string runway, EuroScopePlugIn
 	}
 
 	#if _DEBUG
-	CEXCDSBridge::GetInstance()->DisplayUserMessage("EXCDS Bridge [DEBUG]", string("MOD ROUTE (" + string(fp.GetCallsign()) + ")").c_str(), route.c_str(), true, true, true, true, true);
+	CEXCDSBridge::GetInstance()->DisplayUserMessage("EXCDS Bridge [DEBUG]", std::string("MOD ROUTE (" + std::string(fp.GetCallsign()) + ")").c_str(), route.c_str(), true, true, true, true, true);
 	#endif
 
 	return route;
