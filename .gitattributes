@@ -1,0 +1,1 @@
+vcpkg-export*.nupkg filter=lfs diff=lfs merge=lfs -text
