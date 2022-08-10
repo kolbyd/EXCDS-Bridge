@@ -57,6 +57,7 @@ void CEXCDSBridge::bind_events()
 	MessageHandler messageHandler;
 
 	// Messages FROM EXCDS, to update aircraft in EuroScope
+	socketClient.socket()->on("UPDATE_SCRATCHPAD", std::bind(&MessageHandler::UpdateScratchPad, &messageHandler, std::placeholders::_1));
 	socketClient.socket()->on("UPDATE_STRIP_ANNOTATION", std::bind(&MessageHandler::UpdateStripAnnotation, &messageHandler, std::placeholders::_1));
 	socketClient.socket()->on("UPDATE_TEMPORARY_ALTITUDE", std::bind(&MessageHandler::UpdateAltitude, &messageHandler, std::placeholders::_1));
 	socketClient.socket()->on("UPDATE_FINAL_ALTITUDE", std::bind(&MessageHandler::UpdateAltitude, &messageHandler, std::placeholders::_1));
