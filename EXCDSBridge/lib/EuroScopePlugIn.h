@@ -2835,7 +2835,7 @@ public:
     //      =>  ItemCode            - the item code
     //      =>  sItemString         - the string of the selected item (as
     //                                these are TAG item functions they may
-    //                                require the actual item string)
+    //                                rGre the actual item string)
     //      =>  sFunctionPlugInName - the function provider plugin (for base
     //                                EuroScope TAG functions pass NULL)
     //      =>  FunctionId          - the ID of the function

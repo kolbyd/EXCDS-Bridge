@@ -12,6 +12,9 @@ public:
     CEXCDSBridge();
     virtual ~CEXCDSBridge();
 
+    // Listens to EuroScope
+    void OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan FlightPlan);
+    void OnFlightPlanControllerAssignedDataUpdate(EuroScopePlugIn::CFlightPlan FlightPlan, int DataType);
 private:
     void bind_events();
 };

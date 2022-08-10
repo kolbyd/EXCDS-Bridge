@@ -8,7 +8,7 @@
 #include "CEXCDSBridge.h"
 
 #define PLUGIN_NAME		"EXCDS Bridge"
-#define PLUGIN_VERSION	"0.0.1-alpha"
+#define PLUGIN_VERSION	"0.0.3-alpha"
 #define PLUGIN_AUTHOR	"Kolby Dunning / Liam Shaw (Frontend)"
 #define PLUGIN_LICENSE	"Attribution-ShareAlike 4.0 International (CC BY-SA 4.0)"
 
@@ -35,13 +35,10 @@ CEXCDSBridge::CEXCDSBridge() :
 	// Set instance
 	instance = this;
 
-	// Connect to server
 	socketClient.connect(BRIDGE_HOST + ":" + BRIDGE_PORT);
-
-	// Tell the program that we are connected
 	socketClient.socket()->emit("CONNECTED", sio::message::list("true"));
 
-	// Register for events
+	// Register for the socket events
 	bind_events();
 }
 
@@ -55,22 +52,50 @@ CEXCDSBridge::~CEXCDSBridge()
 	socketClient.close();
 }
 
-/**
-* Creates the event listener for the plugin.
-*/
 void CEXCDSBridge::bind_events()
 {
 	MessageHandler messageHandler;
 
+	// Messages FROM EXCDS, to update aircraft in EuroScope
 	socketClient.socket()->on("UPDATE_GROUND_STATUS", std::bind(&MessageHandler::UpdateGroundStatus, &messageHandler, std::placeholders::_1));
 	socketClient.socket()->on("UPDATE_CLEARANCE", std::bind(&MessageHandler::UpdateClearance, &messageHandler, std::placeholders::_1));
 	socketClient.socket()->on("UPDATE_TEMPORARY_ALTITUDE", std::bind(&MessageHandler::UpdateAltitude, &messageHandler, std::placeholders::_1));
 	socketClient.socket()->on("UPDATE_FINAL_ALTITUDE", std::bind(&MessageHandler::UpdateAltitude, &messageHandler, std::placeholders::_1));
-	socketClient.socket()->on("UPDATE_SQUAWK", std::bind(&MessageHandler::UpdateSquawk, &messageHandler, std::placeholders::_1));
-	socketClient.socket()->on("UPDATE_DEPARTURE_RUNWAY", std::bind(&MessageHandler::UpdateRunway, &messageHandler, std::placeholders::_1));
-	socketClient.socket()->on("UPDATE_ARRIVAL_RUNWAY", std::bind(&MessageHandler::UpdateRunway, &messageHandler, std::placeholders::_1));
+	socketClient.socket()->on("REQUEST_RELEASE", std::bind(&MessageHandler::UpdateSitu, &messageHandler, std::placeholders::_1));
+	socketClient.socket()->on("GRANT_RELEASE", std::bind(&MessageHandler::UpdateSitu, &messageHandler, std::placeholders::_1));	
+
+	// EXCDS information requests
+	socketClient.socket()->on("REQUEST_FP_DATA", std::bind(&MessageHandler::RequestAircraftInformation, &messageHandler, std::placeholders::_1));
+
+	// Unused
+	//socketClient.socket()->on("UPDATE_SQUAWK", std::bind(&MessageHandler::UpdateSquawk, &messageHandler, std::placeholders::_1));
+	//socketClient.socket()->on("UPDATE_DEPARTURE_RUNWAY", std::bind(&MessageHandler::UpdateRunway, &messageHandler, std::placeholders::_1));
+	//socketClient.socket()->on("UPDATE_ARRIVAL_RUNWAY", std::bind(&MessageHandler::UpdateRunway, &messageHandler, std::placeholders::_1));
 }
 
+/**
+* Listens to flight data updates from EuroScope.
+*/
+void CEXCDSBridge::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan FlightPlan)
+{
+	sio::message::ptr response = sio::object_message::create();
+	response->get_map()["callsign"] = sio::string_message::create(FlightPlan.GetCallsign());
+	MessageHandler::PrepareFlightPlanDataResponse(FlightPlan, response);
+
+	GetSocket()->emit("SEND_FP_DATA", response);
+}
+void CEXCDSBridge::OnFlightPlanControllerAssignedDataUpdate(EuroScopePlugIn::CFlightPlan FlightPlan, int DataType)
+{
+	sio::message::ptr response = sio::object_message::create();
+	response->get_map()["callsign"] = sio::string_message::create(FlightPlan.GetCallsign());
+	MessageHandler::PrepareFlightPlanDataResponse(FlightPlan, response);
+
+	GetSocket()->emit("SEND_FP_DATA", response);
+}
+
+/**
+* Helper methods
+*/
 void CEXCDSBridge::SendEuroscopeMessage(const char* callsign, char* message, char* id)
 {
 	char s[256];
