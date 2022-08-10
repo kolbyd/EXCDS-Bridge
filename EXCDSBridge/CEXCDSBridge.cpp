@@ -8,7 +8,7 @@
 #include "CEXCDSBridge.h"
 
 #define PLUGIN_NAME		"EXCDS Bridge"
-#define PLUGIN_VERSION	"0.0.3-alpha"
+#define PLUGIN_VERSION	"0.0.4-alpha"
 #define PLUGIN_AUTHOR	"Kolby Dunning / Liam Shaw (Frontend)"
 #define PLUGIN_LICENSE	"Attribution-ShareAlike 4.0 International (CC BY-SA 4.0)"
 
@@ -57,8 +57,7 @@ void CEXCDSBridge::bind_events()
 	MessageHandler messageHandler;
 
 	// Messages FROM EXCDS, to update aircraft in EuroScope
-	socketClient.socket()->on("UPDATE_GROUND_STATUS", std::bind(&MessageHandler::UpdateGroundStatus, &messageHandler, std::placeholders::_1));
-	socketClient.socket()->on("UPDATE_CLEARANCE", std::bind(&MessageHandler::UpdateClearance, &messageHandler, std::placeholders::_1));
+	socketClient.socket()->on("UPDATE_STRIP_ANNOTATION", std::bind(&MessageHandler::UpdateStripAnnotation, &messageHandler, std::placeholders::_1));
 	socketClient.socket()->on("UPDATE_TEMPORARY_ALTITUDE", std::bind(&MessageHandler::UpdateAltitude, &messageHandler, std::placeholders::_1));
 	socketClient.socket()->on("UPDATE_FINAL_ALTITUDE", std::bind(&MessageHandler::UpdateAltitude, &messageHandler, std::placeholders::_1));
 	socketClient.socket()->on("REQUEST_RELEASE", std::bind(&MessageHandler::UpdateSitu, &messageHandler, std::placeholders::_1));

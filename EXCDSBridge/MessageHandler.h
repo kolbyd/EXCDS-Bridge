@@ -4,12 +4,12 @@
 class MessageHandler
 {
 public:
-	void UpdateGroundStatus(sio::event &);
-	void UpdateClearance(sio::event&);
 	void UpdateAltitude(sio::event&);
+	void UpdateScratchPad(sio::event&);
 	void UpdateSquawk(sio::event&);
 	void UpdateRunway(sio::event&);
 	void UpdateSitu(sio::event&);
+	void UpdateStripAnnotation(sio::event&);
 	
 	void RequestAircraftInformation(sio::event&);
 	static void PrepareFlightPlanDataResponse(EuroScopePlugIn::CFlightPlan fp, sio::message::ptr response);
