@@ -65,7 +65,8 @@ void CEXCDSBridge::bind_events()
 	socketClient.socket()->on("GRANT_RELEASE", std::bind(&MessageHandler::UpdateSitu, &messageHandler, std::placeholders::_1));	
 
 	// EXCDS information requests
-	socketClient.socket()->on("REQUEST_FP_DATA", std::bind(&MessageHandler::RequestAircraftInformation, &messageHandler, std::placeholders::_1));
+	socketClient.socket()->on("REQUEST_ALL_FP_DATA", std::bind(&MessageHandler::RequestAllAircraft, &messageHandler, std::placeholders::_1));
+	socketClient.socket()->on("REQUEST_FP_DATA_CALLSIGN", std::bind(&MessageHandler::RequestAircraftByCallsign, &messageHandler, std::placeholders::_1));
 
 	// Unused
 	//socketClient.socket()->on("UPDATE_SQUAWK", std::bind(&MessageHandler::UpdateSquawk, &messageHandler, std::placeholders::_1));

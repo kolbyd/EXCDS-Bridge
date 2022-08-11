@@ -11,7 +11,8 @@ public:
 	void UpdateSitu(sio::event&);
 	void UpdateStripAnnotation(sio::event&);
 	
-	void RequestAircraftInformation(sio::event&);
+	void RequestAllAircraft(sio::event&);
+	void RequestAircraftByCallsign(sio::event&);
 	static void PrepareFlightPlanDataResponse(EuroScopePlugIn::CFlightPlan fp, sio::message::ptr response);
 private:
 	bool MessageHandler::FlightPlanChecks(EuroScopePlugIn::CFlightPlan fp, sio::message::ptr response, sio::event& e);

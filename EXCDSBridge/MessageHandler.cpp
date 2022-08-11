@@ -81,7 +81,7 @@ void MessageHandler::UpdateAltitude(sio::event& e)
 	else {
 		e.put_ack_message(NotModified(response, "Unknown update type."));
 
-		CEXCDSBridge::SendEuroscopeMessage(callsign.c_str(), "Cannot modify.", "UNKNOWN_TYPE");
+		CEXCDSBridge::SendEuroscopeMessage(callsign.c_str(), "Cannot modify.", "UNKNOWN_TYP");
 		return;
 	}
 
@@ -179,7 +179,7 @@ __declspec(deprecated) void MessageHandler::UpdateRunway(sio::event& e)
 	else {
 		e.put_ack_message(NotModified(response, "Unknown update type."));
 
-		CEXCDSBridge::SendEuroscopeMessage(callsign.c_str(), "Cannot modify.", "UNKNOWN_TYPE");
+		CEXCDSBridge::SendEuroscopeMessage(callsign.c_str(), "Cannot modify.", "UNKNOWN_TYP");
 		return;
 	}
 
@@ -217,10 +217,13 @@ void MessageHandler::UpdateSitu(sio::event& e)
 	bool isAssigned = false;
 	if (id == "GRANT_RELEASE")
 	{
+		// 1 = FSS / 5 = APP/DEP / 6 = CTR
 		if (CEXCDSBridge::GetInstance()->ControllerMyself().GetFacility() > 1 && CEXCDSBridge::GetInstance()->ControllerMyself().GetFacility() < 5)
 		{
 			e.put_ack_message(NotModified(response, "Permission denied."));
+
 			CEXCDSBridge::SendEuroscopeMessage(callsign.c_str(), "Cannot modify.", "RREL_NT_PRMTD");
+			return;
 		}
 
 		isAssigned = fp.GetControllerAssignedData().SetScratchPadString("RREL");
@@ -276,7 +279,7 @@ void MessageHandler::UpdateStripAnnotation(sio::event& e)
 * ---------------------------
 */
 
-void MessageHandler::RequestAircraftInformation(sio::event& e)
+void MessageHandler::RequestAllAircraft(sio::event& e)
 {
 	CEXCDSBridge* bridgeInstance = CEXCDSBridge::GetInstance();
 	EuroScopePlugIn::CFlightPlan flightPlan = bridgeInstance->FlightPlanSelectFirst();
@@ -286,19 +289,50 @@ void MessageHandler::RequestAircraftInformation(sio::event& e)
 	#endif
 
 	while (flightPlan.IsValid()) {
-		#if _DEBUG
-		bridgeInstance->DisplayUserMessage("EXCDS Bridge [DEBUG]", "Data sent", std::string(std::string(flightPlan.GetCallsign()) + " was sent.").c_str(), true, true, true, true, true);
-		#endif
+		if (flightPlan.GetState() != EuroScopePlugIn::FLIGHT_PLAN_STATE_NON_CONCERNED)
+		{
+			#if _DEBUG
+			bridgeInstance->DisplayUserMessage("EXCDS Bridge [DEBUG]", "Data sent", std::string(std::string(flightPlan.GetCallsign()) + " was sent.").c_str(), true, true, true, true, true);
+			#endif
 
-		sio::message::ptr response = sio::object_message::create();
-		response->get_map()["callsign"] = sio::string_message::create(flightPlan.GetCallsign());
-		MessageHandler::PrepareFlightPlanDataResponse(flightPlan, response);
-		
-		bridgeInstance->GetSocket()->emit("SEND_FP_DATA", response);
+			sio::message::ptr response = sio::object_message::create();
+			response->get_map()["callsign"] = sio::string_message::create(flightPlan.GetCallsign());
+			MessageHandler::PrepareFlightPlanDataResponse(flightPlan, response);
+
+			bridgeInstance->GetSocket()->emit("SEND_FP_DATA", response);
+		}
 		
 		flightPlan = bridgeInstance->FlightPlanSelectNext(flightPlan);
 	}
 }
+
+void MessageHandler::RequestAircraftByCallsign(sio::event& e)
+{
+	// Parse data from EXCDS
+	std::string callsign = e.get_message()->get_map()["callsign"]->get_string();
+	EuroScopePlugIn::CFlightPlan fp = CEXCDSBridge::GetInstance()->FlightPlanSelect(callsign.c_str());
+
+	// Init Response
+	message::ptr response = object_message::create();
+	response->get_map()["callsign"] = string_message::create(callsign);
+
+	#if _DEBUG
+	CEXCDSBridge::GetInstance()->DisplayUserMessage("EXCDS Bridge [DEBUG]", "Data sent", std::string(std::string(fp.GetCallsign()) + " was sent.").c_str(), true, true, true, true, true);
+	#endif
+
+	if (!fp.IsValid())
+	{
+		e.put_ack_message(NotModified(response, "Aircraft not found."));
+
+		CEXCDSBridge::SendEuroscopeMessage(callsign.c_str(), "Cannot find aircraft.", "AC_NT_FND");
+		return;
+	}
+
+	MessageHandler::PrepareFlightPlanDataResponse(fp, response);
+	CEXCDSBridge::GetSocket()->emit("SEND_FP_DATA", response);
+}
+
+
 
 void MessageHandler::PrepareFlightPlanDataResponse(EuroScopePlugIn::CFlightPlan fp, message::ptr response)
 {
@@ -350,8 +384,13 @@ void MessageHandler::PrepareFlightPlanDataResponse(EuroScopePlugIn::CFlightPlan 
 		response->get_map()["euroscope"]->get_map()["direction_to"] =			 double_message::create(origin.DirectionTo(destination));
 		response->get_map()["euroscope"]->get_map()["distance_from_origin"] =	 double_message::create(fp.GetDistanceFromOrigin());
 		response->get_map()["euroscope"]->get_map()["distance_to_destination"] = double_message::create(fp.GetDistanceToDestination());
+
 		// Time to destination in minutes
-		response->get_map()["euroscope"]->get_map()["time_to_destination"] =	 double_message::create(fp.GetDistanceToDestination() / fp.GetCorrelatedRadarTarget().GetGS() * 60);
+		if (fp.GetCorrelatedRadarTarget().GetGS() > 40)
+			response->get_map()["euroscope"]->get_map()["time_to_destination"] = double_message::create(fp.GetDistanceToDestination() / fp.GetCorrelatedRadarTarget().GetGS() * 60);
+		else
+			response->get_map()["euroscope"]->get_map()["time_to_destination"] = double_message::create(-1);
+		
 		response->get_map()["euroscope"]->get_map()["ground_speed"] =			 int_message::create(fp.GetCorrelatedRadarTarget().GetGS());
 		response->get_map()["euroscope"]->get_map()["next_point"] =				 string_message::create(fp.GetExtractedRoute().GetPointName(fp.GetExtractedRoute().GetPointsCalculatedIndex()));
 		response->get_map()["euroscope"]->get_map()["next_point_estimate"] =	 int_message::create(fp.GetExtractedRoute().GetPointDistanceInMinutes(fp.GetExtractedRoute().GetPointsCalculatedIndex()));
