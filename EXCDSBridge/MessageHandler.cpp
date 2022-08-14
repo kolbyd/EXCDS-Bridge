@@ -355,6 +355,9 @@ void MessageHandler::PrepareFlightPlanDataResponse(EuroScopePlugIn::CFlightPlan 
 		response->get_map()["flight_plan"]->get_map()["arrival_runway"] =		string_message::create(fp.GetFlightPlanData().GetArrivalRwy());
 		response->get_map()["flight_plan"]->get_map()["departure_airport"] =	string_message::create(fp.GetFlightPlanData().GetOrigin());
 		response->get_map()["flight_plan"]->get_map()["departure_runway"] =		string_message::create(fp.GetFlightPlanData().GetDepartureRwy());
+		response->get_map()["flight_plan"]->get_map()["departure_time"] =		string_message::create(fp.GetFlightPlanData().GetEstimatedDepartureTime());
+		response->get_map()["flight_plan"]->get_map()["enroute_hours"] =		string_message::create(fp.GetFlightPlanData().GetEnrouteHours());
+		response->get_map()["flight_plan"]->get_map()["enroute_minutes"] =		string_message::create(fp.GetFlightPlanData().GetEnrouteMinutes());
 		response->get_map()["flight_plan"]->get_map()["equipment_code"] =		string_message::create(std::string(1, fp.GetFlightPlanData().GetCapibilities()));
 		response->get_map()["flight_plan"]->get_map()["filed_speed"] =			int_message::create(fp.GetFlightPlanData().GetTrueAirspeed());
 		response->get_map()["flight_plan"]->get_map()["final_altitude"] =		int_message::create(fp.GetFlightPlanData().GetFinalAltitude());
