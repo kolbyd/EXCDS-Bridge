@@ -94,6 +94,11 @@ void CEXCDSBridge::OnFlightPlanControllerAssignedDataUpdate(EuroScopePlugIn::CFl
 	GetSocket()->emit("SEND_FP_DATA", response);
 }
 
+void CEXCDSBridge::OnFlightPlanDisconnect(EuroScopePlugIn::CFlightPlan FlightPlan)
+{
+	GetSocket()->emit("CALLSIGN_DISCONNECT", sio::string_message::create(FlightPlan.GetCallsign()));
+}
+
 /**
 * Helper methods
 */

@@ -304,6 +304,8 @@ void MessageHandler::RequestAllAircraft(sio::event& e)
 		
 		flightPlan = bridgeInstance->FlightPlanSelectNext(flightPlan);
 	}
+
+	e.put_ack_message(bool_message::create(true));
 }
 
 void MessageHandler::RequestAircraftByCallsign(sio::event& e)

@@ -15,6 +15,7 @@ public:
     // Listens to EuroScope
     void OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan FlightPlan);
     void OnFlightPlanControllerAssignedDataUpdate(EuroScopePlugIn::CFlightPlan FlightPlan, int DataType);
+    void OnFlightPlanDisconnect(EuroScopePlugIn::CFlightPlan FlightPlan);
 private:
     void bind_events();
 };
