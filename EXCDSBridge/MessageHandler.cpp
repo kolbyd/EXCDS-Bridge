@@ -5,6 +5,7 @@
 #include <sstream>
 #include <regex>
 #include <time.h>
+#include <vector>
 
 #include "EuroScopePlugIn.h"
 #include "CEXCDSBridge.h"
@@ -14,6 +15,18 @@
 using namespace sio;
 
 const std::string defaultAnnotation = "altm:,aprq:,arin:,atis:,ctrm:,dpin:,fpui:,hlin:,intx:,gate:,spmd:,txcl:,";
+
+// Aircraft tuple is:
+// 0: Callsign
+// 1: Departure Airport
+// 2: Route
+// 3: Arrival Airport
+// 4: Speed
+// 5: Transponder
+// 6: Final altitude
+// 7: Coordinated Altitude
+
+std::tuple<std::string, std::string> aircraft;
 
 /**
 * ---------------------------
@@ -60,7 +73,6 @@ void MessageHandler::UpdateAltitude(sio::event& e)
 	std::string callsign = e.get_message()->get_map()["callsign"]->get_string();
 	int cleared = e.get_message()->get_map()["cleared"]->get_int();
 	int final = e.get_message()->get_map()["final"]->get_int();
-	int expected = e.get_message()->get_map()["expected"]->get_int();
 	int coordinated = e.get_message()->get_map()["coordinated"]->get_int();
 	// Warning, wrong way, vfr etc.
 	std::string warning = e.get_message()->get_map()["warning"]->get_string();
@@ -84,8 +96,6 @@ void MessageHandler::UpdateAltitude(sio::event& e)
 		fp.GetFlightPlanData().SetFinalAltitude(final);
 		fp.GetControllerAssignedData().SetFinalAltitude(final);
 	}
-	if (expected != -1)
-		fp.GetControllerAssignedData().SetFinalAltitude(expected);
 	if (coordinated != -1)
 		fp.InitiateCoordination(fp.GetCoordinatedNextController(), fp.GetNextCopxPointName(), coordinated);
 	if (warning != "") {
@@ -494,6 +504,7 @@ void MessageHandler::UpdateArrivalInstructions(sio::event& e)
 	std::string callsign = e.get_message()->get_map()["callsign"]->get_string();
 	std::string runway = e.get_message()->get_map()["runway"]->get_string();
 	std::string instructions = e.get_message()->get_map()["instructions"]->get_string();
+	std::string requestedApproach = e.get_message()->get_map()["approach"]->get_string();
 	std::string directTo = e.get_message()->get_map()["direct_to"]->get_string();
 	int altitude = e.get_message()->get_map()["altitude"]->get_int();
 
@@ -513,22 +524,22 @@ void MessageHandler::UpdateArrivalInstructions(sio::event& e)
 	if (strcmp(runway.c_str(), "") != 0)
 		MessageHandler::AddRunwayToRoute(runway, fp, false);
 
+	std::string flightStripAnnotation = fp.GetControllerAssignedData().GetFlightStripAnnotation(2);
+	if (flightStripAnnotation.length() < defaultAnnotation.length())
+		flightStripAnnotation = defaultAnnotation;
+
 	if (instructions.length() > 0)
 	{
-		std::string newAnnotation;
+		int keyIndex = flightStripAnnotation.find_first_of("arin:");
+		int nextKeyIndex = flightStripAnnotation.find_first_of(',', keyIndex);
+		flightStripAnnotation = flightStripAnnotation.substr(0, keyIndex) + "arin:" + instructions + flightStripAnnotation.substr(nextKeyIndex);
+	}
 
-		if (strcmp(fp.GetControllerAssignedData().GetFlightStripAnnotation(2), "") == 0)
-		{
-			newAnnotation = defaultAnnotation;
-		}
-		else
-		{
-			newAnnotation = fp.GetControllerAssignedData().GetFlightStripAnnotation(2);
-		}
-
-		int keyIndex = newAnnotation.find_first_of("dpin:");
-		int nextKeyIndex = newAnnotation.find_first_of(',');
-		newAnnotation = newAnnotation.substr(0, keyIndex) + "dpin" + ':' + instructions + newAnnotation.substr(nextKeyIndex);
+	if (requestedApproach.length() > 0)
+	{
+		int keyIndex = flightStripAnnotation.find_first_of("aprq:");
+		int nextKeyIndex = flightStripAnnotation.find_first_of(',', keyIndex);
+		flightStripAnnotation = flightStripAnnotation.substr(0, keyIndex) + "aprq:" + requestedApproach + flightStripAnnotation.substr(nextKeyIndex);
 	}
 
 	if (strcmp(directTo.c_str(), "") != 0)
@@ -699,6 +710,7 @@ void MessageHandler::PrepareFlightPlanDataResponse(EuroScopePlugIn::CFlightPlan 
 		response->get_map()["altitude"]->get_map()["coordinated"] =				int_message::create(coordinated);
 		response->get_map()["altitude"]->get_map()["filed"] =					string_message::create(filedAltString);
 		response->get_map()["altitude"]->get_map()["final"] =					int_message::create(final);
+		response->get_map()["altitude"]->get_map()["reported"] =				string_message::create(fp.GetControllerAssignedData().GetFlightStripAnnotation(8));
 
 		// Assigned Data
 		std::string excdsAnnotation = std::string(fp.GetControllerAssignedData().GetFlightStripAnnotation(2));
@@ -870,23 +882,13 @@ void MessageHandler::PrepareFlightPlanDataResponse(EuroScopePlugIn::CFlightPlan 
 		response->get_map()["times"]->get_map()["enroute_minutes"] =			string_message::create(fp.GetFlightPlanData().GetEnrouteMinutes());
 		response->get_map()["times"]->get_map()["filed_departure_time"] =		string_message::create(fp.GetFlightPlanData().GetEstimatedDepartureTime());
 
-		// Little cumstain named Liam wrote this |-_-|
-
 		// EXCDs estimate
 		CEXCDSBridge* bridgeInstance = CEXCDSBridge::GetInstance();
 
-		std::string iaf = "";
-		int iafEstimate = -1;
-
-		if (fp.GetExtractedRoute().GetPointsNumber() > 1)
-		{
-			std::string iaf = fp.GetExtractedRoute().GetPointName(fp.GetExtractedRoute().GetPointsNumber() - 1);
-			int iafEstimate = fp.GetExtractedRoute().GetPointDistanceInMinutes(fp.GetExtractedRoute().GetPointsNumber() - 1);
-		}
+		std::string arrivalEstimateName;
+		int arrivalEstimateTime;
 
 		std::string bedpost = fp.GetFlightPlanData().GetStarName();
-		int bedpostEstimate = -1;
-
 		if (bedpost.length() > 0) {
 			bedpost = bedpost.substr(0, bedpost.size() - 1);
 
@@ -894,10 +896,16 @@ void MessageHandler::PrepareFlightPlanDataResponse(EuroScopePlugIn::CFlightPlan 
 			{
 				if (strcmp(fp.GetExtractedRoute().GetPointName(i), bedpost.c_str()) == 0)
 				{
-					bedpostEstimate = fp.GetExtractedRoute().GetPointDistanceInMinutes(i);
+					arrivalEstimateTime = fp.GetExtractedRoute().GetPointDistanceInMinutes(i);
+					arrivalEstimateName = bedpost;
 					break;
 				}
 			}
+		}
+		else if (fp.GetExtractedRoute().GetPointsNumber() > 1)
+		{
+			arrivalEstimateName = fp.GetExtractedRoute().GetPointName(fp.GetExtractedRoute().GetPointsNumber() - 1);
+			arrivalEstimateTime = fp.GetExtractedRoute().GetPointDistanceInMinutes(fp.GetExtractedRoute().GetPointsNumber() - 1);
 		}
 
 		message::ptr excdsEstimatesArray = array_message::create();
@@ -934,10 +942,8 @@ void MessageHandler::PrepareFlightPlanDataResponse(EuroScopePlugIn::CFlightPlan 
 		}
 
 		response->get_map()["excds_estimates"] = object_message::create();
-		response->get_map()["excds_estimates"]->get_map()["bedpost_estimate"] =	int_message::create(iafEstimate);
-		response->get_map()["excds_estimates"]->get_map()["bedpost_name"] =		string_message::create(iaf);
-		response->get_map()["excds_estimates"]->get_map()["iaf_estimate"] =		int_message::create(iafEstimate);
-		response->get_map()["excds_estimates"]->get_map()["iaf_name"] =			string_message::create(iaf);
+		response->get_map()["excds_estimates"]->get_map()["arrival_time"] =		int_message::create(arrivalEstimateTime);
+		response->get_map()["excds_estimates"]->get_map()["arrival_fix"] =		string_message::create(arrivalEstimateName);
 		response->get_map()["excds_estimates"]->get_map()["vor_estimates"] =	excdsEstimatesArray;
 
 		response->get_map()["success"] = bool_message::create(true);
@@ -1363,6 +1369,8 @@ bool MessageHandler::StatusAssign(std::string status, EuroScopePlugIn::CFlightPl
 	else if (strcmp(status.c_str(), "CLRD") == 0)
 	{
 		success = fp.GetControllerAssignedData().SetScratchPadString("CLEA");
+		success = fp.GetControllerAssignedData().SetScratchPadString("NSTS");
+		success = fp.GetControllerAssignedData().SetScratchPadString("");
 	}
 	else if (strcmp(status.c_str(), "PUSH") == 0)
 	{
@@ -1372,6 +1380,7 @@ bool MessageHandler::StatusAssign(std::string status, EuroScopePlugIn::CFlightPl
 	{
 		success = fp.GetControllerAssignedData().SetScratchPadString("CLEA");
 		success = fp.GetControllerAssignedData().SetScratchPadString("TAXI");
+		success = fp.GetControllerAssignedData().SetScratchPadString("");
 	}
 	else if (strcmp(status.c_str(), "TXRQ") == 0)
 	{
