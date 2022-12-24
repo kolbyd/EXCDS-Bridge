@@ -8,7 +8,7 @@
 #include "CEXCDSBridge.h"
 
 #define PLUGIN_NAME		"EXCDS Bridge"
-#define PLUGIN_VERSION	"0.0.4-alpha"
+#define PLUGIN_VERSION	"0.0.5-alpha"
 #define PLUGIN_AUTHOR	"Kolby Dunning / Liam Shaw"
 #define PLUGIN_LICENSE	"Attribution-ShareAlike 4.0 International (CC BY-SA 4.0)"
 
@@ -57,10 +57,6 @@ void CEXCDSBridge::bind_events()
 	MessageHandler messageHandler;
 
 	// Messages FROM EXCDS, to update aircraft in EuroScope
-	socketClient.socket()->on("UPDATE_SCRATCHPAD", std::bind(&MessageHandler::UpdateScratchPad, &messageHandler, std::placeholders::_1));
-	socketClient.socket()->on("UPDATE_STRIP_ANNOTATION", std::bind(&MessageHandler::UpdateStripAnnotation, &messageHandler, std::placeholders::_1));
-	socketClient.socket()->on("UPDATE_DEPARTURE_RUNWAY", std::bind(&MessageHandler::UpdateRunway, &messageHandler, std::placeholders::_1));
-	socketClient.socket()->on("UPDATE_ARRIVAL_RUNWAY", std::bind(&MessageHandler::UpdateRunway, &messageHandler, std::placeholders::_1));
 	socketClient.socket()->on("UPDATE_ALTITUDE", std::bind(&MessageHandler::UpdateAltitude, &messageHandler, std::placeholders::_1));
 	socketClient.socket()->on("UPDATE_SPEED", std::bind(&MessageHandler::UpdateSpeed, &messageHandler, std::placeholders::_1));
 	socketClient.socket()->on("UPDATE_FLIGHTPLAN", std::bind(&MessageHandler::UpdateFlightPlan, &messageHandler, std::placeholders::_1));
@@ -68,13 +64,14 @@ void CEXCDSBridge::bind_events()
 	socketClient.socket()->on("UPDATE_DEPARTURE_INSTRUCTIONS", std::bind(&MessageHandler::UpdateDepartureInstructions, &messageHandler, std::placeholders::_1));
 	socketClient.socket()->on("UPDATE_ARRIVAL_INSTRUCTIONS", std::bind(&MessageHandler::UpdateArrivalInstructions, &messageHandler, std::placeholders::_1));
 	socketClient.socket()->on("UPDATE_TRACKING_STATUS", std::bind(&MessageHandler::UpdateTrackingStatus, &messageHandler, std::placeholders::_1));
+	socketClient.socket()->on("UPDATE_ESTIMATE", std::bind(&MessageHandler::UpdateEstimate, &messageHandler, std::placeholders::_1));
+	socketClient.socket()->on("UPDATE_DIRECT", std::bind(&MessageHandler::UpdateDirectTo, &messageHandler, std::placeholders::_1));
+	socketClient.socket()->on("UPDATE_FLIGHT_PLAN", std::bind(&MessageHandler::UpdateFlightPlan, &messageHandler, std::placeholders::_1));
 
 	// Interacts with SITU
 	socketClient.socket()->on("REQUEST_RELEASE", std::bind(&MessageHandler::UpdateSitu, &messageHandler, std::placeholders::_1));
 	socketClient.socket()->on("GRANT_RELEASE", std::bind(&MessageHandler::UpdateSitu, &messageHandler, std::placeholders::_1));
 
-	//socketClient.socket()->on("UPDATE_ESTIMATE", std::bind(&MessageHandler::UpdateEstimate, &messageHandler, std::placeholders::_1));
-	//socketClient.socket()->on("UPDATE_FLIGHT_PLAN", std::bind(&MessageHandler::UpdateFlightPlan, &messageHandler, std::placeholders::_1));
 	//socketClient.socket()->on("UPDATE_DIRECT_TO", std::bind(&MessageHandler::UpdateDirectTo, &messageHandler, std::placeholders::_1));
 	//socketClient.socket()->on("UPDATE_DESTINATION", std::bind(&MessageHandler::UpdateDestination, &messageHandler, std::placeholders::_1));
 	//socketClient.socket()->on("TRIGGER_MISSED_APPROACH", std::bind(&MessageHandler::UpdateMissedApproach, &messageHandler, std::placeholders::_1));
@@ -82,7 +79,6 @@ void CEXCDSBridge::bind_events()
 	// EXCDS information requests
 	socketClient.socket()->on("REQUEST_ALL_FP_DATA", std::bind(&MessageHandler::RequestAllAircraft, &messageHandler, std::placeholders::_1));
 	socketClient.socket()->on("REQUEST_FP_DATA_CALLSIGN", std::bind(&MessageHandler::RequestAircraftByCallsign, &messageHandler, std::placeholders::_1));
-	socketClient.socket()->on("REQUEST_FP", std::bind(&MessageHandler::RequestFlightPlan, &messageHandler, std::placeholders::_1));
 }
 
 /**
