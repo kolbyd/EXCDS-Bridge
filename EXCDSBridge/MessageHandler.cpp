@@ -5,7 +5,6 @@
 #include <sstream>
 #include <regex>
 #include <time.h>
-#include <vector>
 
 #include "EuroScopePlugIn.h"
 #include "CEXCDSBridge.h"
@@ -419,8 +418,10 @@ void MessageHandler::UpdateArrivalInstructions(sio::event& e)
 {
 	// Parse data from EXCDS
 	std::string callsign = e.get_message()->get_map()["callsign"]->get_string();
+	std::string runway = e.get_message()->get_map()["runway"]->get_string();
+	std::string requestedApproach = e.get_message()->get_map()["approach"]->get_string();
 	std::string directTo = e.get_message()->get_map()["direct_to"]->get_string();
-	int altitude = e.get_ack_message()->get_map()["altitude"]->get_int();
+	int altitude = e.get_message()->get_map()["altitude"]->get_int();
 
 	// Init Response
 	message::ptr response = object_message::create();
@@ -435,13 +436,13 @@ void MessageHandler::UpdateArrivalInstructions(sio::event& e)
 		return;
 	}
 
+	if (strcmp(runway.c_str(), "") != 0)
+		MessageHandler::AddRunwayToRoute(runway, fp, false);
+
 	if (strcmp(directTo.c_str(), "") != 0)
 	{
 		MessageHandler::DirectTo(directTo, fp, false);
 	}
-
-	if (altitude > 0)
-		fp.GetControllerAssignedData().SetClearedAltitude(altitude);
 
 	fp.GetFlightPlanData().AmendFlightPlan();
 }
@@ -677,7 +678,6 @@ void MessageHandler::PrepareFlightPlanDataResponse(EuroScopePlugIn::CFlightPlan 
 		response->get_map()["altitude"]->get_map()["coordinated"] =				int_message::create(coordinated);
 		response->get_map()["altitude"]->get_map()["filed"] =					string_message::create(filedAltString);
 		response->get_map()["altitude"]->get_map()["final"] =					int_message::create(final);
-		response->get_map()["altitude"]->get_map()["reported"] =				string_message::create(fp.GetControllerAssignedData().GetFlightStripAnnotation(8));
 
 		// Assigned Data
 		response->get_map()["assigned"] =										object_message::create();
@@ -849,10 +849,11 @@ void MessageHandler::PrepareFlightPlanDataResponse(EuroScopePlugIn::CFlightPlan 
 		// EXCDs estimate
 		CEXCDSBridge* bridgeInstance = CEXCDSBridge::GetInstance();
 
-		std::string arrivalEstimateName;
+		std::string arrivalEstimateName = "";
 		int arrivalEstimateTime = -1;
 
 		std::string bedpost = fp.GetFlightPlanData().GetStarName();
+
 		if (bedpost.length() > 0) {
 			bedpost = bedpost.substr(0, bedpost.size() - 1);
 
@@ -861,42 +862,63 @@ void MessageHandler::PrepareFlightPlanDataResponse(EuroScopePlugIn::CFlightPlan 
 				if (strcmp(fp.GetExtractedRoute().GetPointName(i), bedpost.c_str()) == 0)
 				{
 					arrivalEstimateTime = fp.GetExtractedRoute().GetPointDistanceInMinutes(i);
-					arrivalEstimateName = bedpost;
+					arrivalEstimateName = fp.GetExtractedRoute().GetPointName(i);
 					break;
 				}
 			}
 		}
 		else if (fp.GetExtractedRoute().GetPointsNumber() > 1)
 		{
-			arrivalEstimateName = fp.GetExtractedRoute().GetPointName(fp.GetExtractedRoute().GetPointsNumber() - 1);
 			arrivalEstimateTime = fp.GetExtractedRoute().GetPointDistanceInMinutes(fp.GetExtractedRoute().GetPointsNumber() - 1);
+			arrivalEstimateName = fp.GetExtractedRoute().GetPointName(fp.GetExtractedRoute().GetPointsNumber() - 1);
 		}
-
-		const char* estimateNDB = fp.GetControllerAssignedData().GetFlightStripAnnotation(6);
+		else
+		{
+			arrivalEstimateName = fp.GetFlightPlanData().GetDestination();
+			arrivalEstimateTime = fp.GetPositionPredictions().GetPointsNumber() - 1;
+		}
 
 		EuroScopePlugIn::CSectorElement NDBSectorElement = bridgeInstance->SectorFileElementSelectFirst(2);
 
-		int estimateTime = -1;
+		typedef std::vector< std::tuple<std::string, int> > estimatesVectorType;
+		estimatesVectorType estimateVector;
+
+		// Determines where to place the strip
+		// 0 - Place the strip in the proposed bay
+		// 1 - Move the strip from proposed to its active panel (if available)
+		// Otherwise place it in the bay that it will pass abeam to in the shortest amount of time
+		std::string bay = "0";
+		int bayEstimateTime = 500;
+		
+		response->get_map()["excds_estimates"] = object_message::create();
+		response->get_map()["excds_estimates"]->get_map()["estimates"] = object_message::create();
 
 		while (NDBSectorElement.IsValid())
 		{
 			EuroScopePlugIn::CPosition NDBPosition;
 			NDBSectorElement.GetPosition(&NDBPosition, 0);
-			double previousDistanceToVor = fp.GetPositionPredictions().GetPosition(0).DistanceTo(NDBPosition);
+			double previousDistanceToNDB = fp.GetPositionPredictions().GetPosition(0).DistanceTo(NDBPosition);
 
 			for (int i = 1; i < fp.GetPositionPredictions().GetPointsNumber(); i++)
 			{
-				if (previousDistanceToVor > fp.GetPositionPredictions().GetPosition(i).DistanceTo(NDBPosition))
+				if (previousDistanceToNDB > fp.GetPositionPredictions().GetPosition(i).DistanceTo(NDBPosition))
 				{
-					previousDistanceToVor = fp.GetPositionPredictions().GetPosition(i).DistanceTo(NDBPosition);
+					previousDistanceToNDB = fp.GetPositionPredictions().GetPosition(i).DistanceTo(NDBPosition);
 				}
-				else if (i == 1 || fp.GetPositionPredictions().GetPosition(i).DistanceTo(NDBPosition) > 100)
+				else if (i == 1 || fp.GetPositionPredictions().GetPosition(i).DistanceTo(NDBPosition) > 200)
 				{
 					break;
 				}
 				else
 				{
-					estimateTime = i;
+					response->get_map()["excds_estimates"]->get_map()["estimates"]->get_map()[NDBSectorElement.GetName()] = int_message::create(i);
+
+					if (i < bayEstimateTime)
+					{
+						bayEstimateTime = i;
+						bay = NDBSectorElement.GetName();
+					}
+
 					break;
 				}
 			}
@@ -904,13 +926,15 @@ void MessageHandler::PrepareFlightPlanDataResponse(EuroScopePlugIn::CFlightPlan 
 			NDBSectorElement = bridgeInstance->SectorFileElementSelectNext(NDBSectorElement, 1);
 		}
 
-		response->get_map()["excds_estimates"] = object_message::create();
+		if (strcmp(fp.GetGroundState(), "TAXI") == 0)
+		{
+			bay = "1";
+		}
+
 		response->get_map()["excds_estimates"]->get_map()["arrival_time"] =		int_message::create(arrivalEstimateTime);
 		response->get_map()["excds_estimates"]->get_map()["arrival_fix"] =		string_message::create(arrivalEstimateName);
 		response->get_map()["excds_estimates"]->get_map()["bay"] =				string_message::create(bay);
-		response->get_map()["excds_estimates"]->get_map()["time"] =				int_message::create(estimateTime);
-
-		//response->get_map()["excds_estimates"]->get_map()["vor_estimates"] =	excdsEstimatesArray;
+		response->get_map()["excds_estimates"]->get_map()["groundstatus"] =		string_message::create(fp.GetGroundState());
 
 		response->get_map()["success"] = bool_message::create(true);
 	}
@@ -1227,8 +1251,6 @@ bool MessageHandler::StatusAssign(std::string status, EuroScopePlugIn::CFlightPl
 	else if (strcmp(status.c_str(), "CLRD") == 0)
 	{
 		success = fp.GetControllerAssignedData().SetScratchPadString("CLEA");
-		success = fp.GetControllerAssignedData().SetScratchPadString("NSTS");
-		success = fp.GetControllerAssignedData().SetScratchPadString("");
 	}
 	else if (strcmp(status.c_str(), "PUSH") == 0)
 	{
@@ -1238,7 +1260,6 @@ bool MessageHandler::StatusAssign(std::string status, EuroScopePlugIn::CFlightPl
 	{
 		success = fp.GetControllerAssignedData().SetScratchPadString("CLEA");
 		success = fp.GetControllerAssignedData().SetScratchPadString("TAXI");
-		success = fp.GetControllerAssignedData().SetScratchPadString("");
 	}
 	else if (strcmp(status.c_str(), "TXRQ") == 0)
 	{
@@ -1249,6 +1270,8 @@ bool MessageHandler::StatusAssign(std::string status, EuroScopePlugIn::CFlightPl
 	{
 		success = fp.GetControllerAssignedData().SetScratchPadString("TAXI");
 		success = fp.GetControllerAssignedData().SetScratchPadString("CLEA");
+
+		OutputDebugString("TXRL");
 
 		// 1 = FSS / 5 = APP/DEP / 6 = CTR
 		if (CEXCDSBridge::GetInstance()->ControllerMyself().GetFacility() > 1 && CEXCDSBridge::GetInstance()->ControllerMyself().GetFacility() < 5)

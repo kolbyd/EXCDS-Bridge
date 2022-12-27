@@ -60,7 +60,7 @@ void CEXCDSBridge::bind_events()
 	socketClient.socket()->on("UPDATE_ALTITUDE", std::bind(&MessageHandler::UpdateAltitude, &messageHandler, std::placeholders::_1));
 	socketClient.socket()->on("UPDATE_SPEED", std::bind(&MessageHandler::UpdateSpeed, &messageHandler, std::placeholders::_1));
 	socketClient.socket()->on("UPDATE_FLIGHTPLAN", std::bind(&MessageHandler::UpdateFlightPlan, &messageHandler, std::placeholders::_1));
-	socketClient.socket()->on("UPDATE_GROUND_STATUS", std::bind(&MessageHandler::UpdateAircraftStatus, &messageHandler, std::placeholders::_1));
+	socketClient.socket()->on("UPDATE_STATUS", std::bind(&MessageHandler::UpdateAircraftStatus, &messageHandler, std::placeholders::_1));
 	socketClient.socket()->on("UPDATE_DEPARTURE_INSTRUCTIONS", std::bind(&MessageHandler::UpdateDepartureInstructions, &messageHandler, std::placeholders::_1));
 	socketClient.socket()->on("UPDATE_ARRIVAL_INSTRUCTIONS", std::bind(&MessageHandler::UpdateArrivalInstructions, &messageHandler, std::placeholders::_1));
 	socketClient.socket()->on("UPDATE_TRACKING_STATUS", std::bind(&MessageHandler::UpdateTrackingStatus, &messageHandler, std::placeholders::_1));
@@ -71,9 +71,6 @@ void CEXCDSBridge::bind_events()
 	// Interacts with SITU
 	socketClient.socket()->on("REQUEST_RELEASE", std::bind(&MessageHandler::UpdateSitu, &messageHandler, std::placeholders::_1));
 	socketClient.socket()->on("GRANT_RELEASE", std::bind(&MessageHandler::UpdateSitu, &messageHandler, std::placeholders::_1));
-
-	//socketClient.socket()->on("UPDATE_DIRECT_TO", std::bind(&MessageHandler::UpdateDirectTo, &messageHandler, std::placeholders::_1));
-	//socketClient.socket()->on("UPDATE_DESTINATION", std::bind(&MessageHandler::UpdateDestination, &messageHandler, std::placeholders::_1));
 	//socketClient.socket()->on("TRIGGER_MISSED_APPROACH", std::bind(&MessageHandler::UpdateMissedApproach, &messageHandler, std::placeholders::_1));
 
 	// EXCDS information requests
@@ -81,24 +78,22 @@ void CEXCDSBridge::bind_events()
 	socketClient.socket()->on("REQUEST_FP_DATA_CALLSIGN", std::bind(&MessageHandler::RequestAircraftByCallsign, &messageHandler, std::placeholders::_1));
 }
 
-/**
-* Listens to flight data updates from EuroScope.
-*/
-void CEXCDSBridge::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan FlightPlan)
+void CEXCDSBridge::OnTimer(int Counter)
 {
-	sio::message::ptr response = sio::object_message::create();
-	response->get_map()["callsign"] = sio::string_message::create(FlightPlan.GetCallsign());
-	MessageHandler::PrepareFlightPlanDataResponse(FlightPlan, response);
-
-	GetSocket()->emit("SEND_FP_DATA", response);
-}
-void CEXCDSBridge::OnFlightPlanControllerAssignedDataUpdate(EuroScopePlugIn::CFlightPlan FlightPlan, int DataType)
-{
-	sio::message::ptr response = sio::object_message::create();
-	response->get_map()["callsign"] = sio::string_message::create(FlightPlan.GetCallsign());
-	MessageHandler::PrepareFlightPlanDataResponse(FlightPlan, response);
-
-	GetSocket()->emit("SEND_FP_DATA", response);
+		CEXCDSBridge* bridgeInstance = CEXCDSBridge::GetInstance();
+		EuroScopePlugIn::CFlightPlan flightPlan = bridgeInstance->FlightPlanSelectFirst();
+	
+		while (flightPlan.IsValid()) {
+			if (flightPlan.GetState() > 0)
+			{
+				sio::message::ptr response = sio::object_message::create();
+				MessageHandler::PrepareFlightPlanDataResponse(flightPlan, response);
+	
+				bridgeInstance->GetSocket()->emit("SEND_FP_DATA", response);
+			}
+	
+			flightPlan = bridgeInstance->FlightPlanSelectNext(flightPlan);
+		}
 }
 
 void CEXCDSBridge::OnFlightPlanDisconnect(EuroScopePlugIn::CFlightPlan FlightPlan)
