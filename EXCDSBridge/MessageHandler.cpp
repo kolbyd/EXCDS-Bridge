@@ -648,24 +648,26 @@ void MessageHandler::PrepareTargetResponse(EuroScopePlugIn::CRadarTarget rt, mes
 		// Radar & Position
 		// PPS Enum
 		// 0 - Not on Radar
-		// 0 - SSR Correlated
-		// 1 - SSR & PSR Correleated
-		// 2 - SSR Uncorrelated
-		// 2 - SSR & PSR Uncorrelated
-		// 3 - Conflict / MSAW
-		// 4 - Emergency
-		// 5 - SSR Block
-		// 6 - PSR Correlated VFR
-		// 6 - Coasting
-		// 6 - VFR
-		// 7 - RVSM
-		// 8 - PSR
-		// 9 - Extrapolated
-		// 10 - ADSB W/O RVSM
-		// 11 - ADSB RVSM
-		// 12 - ADSB VFR
-		// 13 - ADSB Emergency
-		int pps = -1;
+		// 1 - SSR Correlated
+		// 2 - SSR & PSR Correleated
+		// 3 - SSR Uncorrelated
+		// 4 - SSR & PSR Uncorrelated
+		// 5 - Conflict / MSAW
+		// 6 - Emergency
+		// 7 - SSR Block
+		// 8 - PSR Correlated VFR
+		// 9 - Coasting
+		// 10 - VFR
+		// 11 - RVSM
+		// 12 - PSR
+		// 13 - Extrapolated
+		// 14 - ADSB W/O RVSM
+		// 15 - ADSB RVSM
+		// 16 - ADSB VFR
+		// 17 - ADSB Emergency
+		// 18 - ADSB Uncorrelated
+
+		int pps = 0;
 		std::string ssr = "";
 		double latitude = 0;
 		double longitude = 0;
@@ -674,6 +676,11 @@ void MessageHandler::PrepareTargetResponse(EuroScopePlugIn::CRadarTarget rt, mes
 		int vs = 0;
 		int groundSpeed = 0;
 		bool ADSB = false;
+		bool RVSM = false;
+		bool RNAV = false;
+		bool ident = false;
+		bool VFR = false;
+		std::string squawk = "";
 
 		if (rt.GetPosition().IsValid())
 		{
@@ -689,38 +696,106 @@ void MessageHandler::PrepareTargetResponse(EuroScopePlugIn::CRadarTarget rt, mes
 
 			vs = rt.GetVerticalSpeed();
 
+			if (rt.GetPosition().GetTransponderI())
+				ident = true;
+
+			std::string transponderSquawk = rt.GetPosition().GetSquawk();
+			std::string fpSquawk = "";
+
 			if (rt.GetCorrelatedFlightPlan().IsValid())
 			{
-				switch (rt.GetPosition().GetRadarFlags())
-				{
-					case 
+				EuroScopePlugIn::CFlightPlan fp = rt.GetCorrelatedFlightPlan();
+				std::string remarks = fp.GetFlightPlanData().GetRemarks();
+
+				if (remarks.find("STS/ADSB") || fp.GetFlightPlanData().GetAircraftWtc() != 'L')
+					ADSB = true;
+
+				char capabilites = fp.GetFlightPlanData().GetCapibilities();
+				switch (capabilites) {
+				case 'W':
+				case 'Q':
+					RVSM = true;
+				case 'E':
+				case 'F':
+				case 'R':
+					ADSB = true;
+				case 'Y':
+				case 'C':
+				case 'I':
+				case 'G':
+					RNAV = true;
+					break;
 				}
+
+				VFR = strcmp(fp.GetFlightPlanData().GetPlanType(), "V") == 0;
+
+				fpSquawk = fp.GetControllerAssignedData().GetSquawk();
 			}
 
-			//switch (rt.GetPosition().GetRadarFlags()) {
-			//case 1:
-			//	radarEnum = 2;
-			//	break;
-			//case 2:
-			//	radarEnum = 3;
-			//	break;
-			//case 4:
-			//case 7:
-			//	if (rt.GetCorrelatedFlightPlan().IsValid())
-			//	{
-			//		EuroScopePlugIn::CFlightPlan fp = rt.GetCorrelatedFlightPlan();
-			//		std::string remarks = fp.GetFlightPlanData().GetRemarks();
+			if (rt.GetPosition().GetRadarFlags() == 0)
+			{
+				if (rt.GetPosition().IsFPTrackPosition() && !VFR)
+					pps = 13;
+			}
+			else if (rt.GetPosition().GetRadarFlags() == 1)
+			{
+				pps = 12;
+			}
+			else
+			{
+				if (ADSB && rt.GetPosition().GetRadarFlags() != 2)
+				{
+					if (squawk.substr(0, 2).compare("76") == 0 || squawk.substr(0, 2).compare("77") == 0)
+						pps = 17;
+					else if (VFR)
+						pps = 16;
+					else if (RVSM)
+						pps = 15;
+					else
+						pps = 14;
+				}
+				else
+				{
+					if (squawk.substr(0, 2).compare("76") == 0 || squawk.substr(0, 2).compare("77") == 0)
+					{
+						// Emergency
+						pps = 6;
+					}
+					else if (squawk.substr(2, 4).compare("00") == 0)
+					{
+						// SSR Block
+						pps = 7;
+					}
+					else if (fpSquawk.compare(transponderSquawk) == 0)
+					{
+						if (VFR)
+						{
+							pps = 10;
+						}
+						else if (RVSM)
+						{
+							pps = 11;
+						}
 
-			//		if (remarks.find("STS/ADSB") || fp.GetFlightPlanData().GetAircraftWtc() != 'L')
-			//			ADSB = true;
+						if (rt.GetPosition().GetRadarFlags() == 2)
+						{
+							pps = 1;
+						}
+						else
+						{
+							pps = 2;
+						}
+					}
+					else
+					{
+						if (rt.GetPosition().GetRadarFlags() == 2)
+							pps = 3;
+						else
+							pps = 4;
+					}
 
-			//		radarEnum = 5;
-			//	}
-			//	else
-			//	{
-			//		radarEnum = 4;
-			//	}
-			//}
+				}
+			}
 		}
 
 		bool MEDEVAC = false;
@@ -730,7 +805,6 @@ void MessageHandler::PrepareTargetResponse(EuroScopePlugIn::CRadarTarget rt, mes
 		std::string clearedAltitude = "";
 		bool altitudeError = false;
 		int finalAltitude = 0;
-		bool RVSM = false;
 		std::string hocjs = "";
 		int assignedSpeed = -1;
 		int estimatedIas = 0;
@@ -740,12 +814,9 @@ void MessageHandler::PrepareTargetResponse(EuroScopePlugIn::CRadarTarget rt, mes
 		std::string destination = "";
 		int eta = 0;
 		int distanceToDestination = 0;
-
-		bool RNAV = false;
 		std::string remarks = "";
 
 		bool text = false;
-		bool VFR = false;
 
 		if (rt.GetCorrelatedFlightPlan().IsValid())
 		{
@@ -754,8 +825,6 @@ void MessageHandler::PrepareTargetResponse(EuroScopePlugIn::CRadarTarget rt, mes
 
 			if (remarks.find("STS/MEDEVAC"))
 				MEDEVAC = true;
-			if (remarks.find("STS/ADSB") || fp.GetFlightPlanData().GetAircraftWtc() != 'L')
-				ADSB = true;
 
 			callsign = fp.GetCallsign();
 
@@ -816,22 +885,6 @@ void MessageHandler::PrepareTargetResponse(EuroScopePlugIn::CRadarTarget rt, mes
 			eta = fp.GetPositionPredictions().GetPointsNumber();
 			distanceToDestination = fp.GetDistanceToDestination();
 
-			char capabilites = fp.GetFlightPlanData().GetCapibilities();
-			switch (capabilites) {
-			case 'W':
-			case 'Q':
-				RVSM = true;
-			case 'E':
-			case 'F':
-			case 'R':
-				ADSB = true;
-			case 'Y':
-			case 'C':
-			case 'I':
-			case 'G':
-				RNAV = true;
-				break;
-			}
 			remarks = fp.GetControllerAssignedData().GetScratchPadString();
 
 			if (strcmp(fp.GetFlightPlanData().GetPlanType(), "V") == 0)
@@ -849,7 +902,7 @@ void MessageHandler::PrepareTargetResponse(EuroScopePlugIn::CRadarTarget rt, mes
 		response->get_map()["radar"]->get_map()["altitude"] =				int_message::create(modec);
 		response->get_map()["radar"]->get_map()["vertical_speed"] =			int_message::create(vs);
 		response->get_map()["radar"]->get_map()["ground_speed"] =			int_message::create(rt.GetGS());
-		response->get_map()["radar"]->get_map()["enum"] =					int_message::create(radarEnum);
+		response->get_map()["radar"]->get_map()["pps"] =					int_message::create(pps);
 
 		response->get_map()["position"] =									object_message::create();
 		response->get_map()["position"]->get_map()["lat"] =					double_message::create(latitude);
