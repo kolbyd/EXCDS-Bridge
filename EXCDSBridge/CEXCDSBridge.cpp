@@ -82,6 +82,7 @@ void CEXCDSBridge::OnTimer(int Counter)
 {
 		CEXCDSBridge* bridgeInstance = CEXCDSBridge::GetInstance();
 		EuroScopePlugIn::CFlightPlan flightPlan = bridgeInstance->FlightPlanSelectFirst();
+		EuroScopePlugIn::CRadarTarget radarTarget = bridgeInstance->RadarTargetSelectFirst();
 	
 		while (flightPlan.IsValid()) {
 			if (flightPlan.GetState() > 0)
@@ -93,6 +94,16 @@ void CEXCDSBridge::OnTimer(int Counter)
 			}
 	
 			flightPlan = bridgeInstance->FlightPlanSelectNext(flightPlan);
+		}
+
+		while (radarTarget.IsValid()) {
+			sio::message::ptr response = sio::object_message::create();
+			MessageHandler::PrepareTargetResponse(radarTarget, response);
+
+			bridgeInstance->GetSocket()->emit("SEND_RT_DATA", response);
+
+
+			radarTarget = bridgeInstance->RadarTargetSelectNext(radarTarget);
 		}
 }
 

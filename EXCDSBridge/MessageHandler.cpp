@@ -629,6 +629,269 @@ void MessageHandler::RequestAircraftByCallsign(sio::event& e)
 	CEXCDSBridge::GetSocket()->emit("SEND_FP_DATA", response);
 }
 
+void MessageHandler::PrepareTargetResponse(EuroScopePlugIn::CRadarTarget rt, message::ptr response)
+{
+	try
+	{
+		if (!rt.IsValid()) return;
+
+		#if _DEBUG
+		char buf[100];
+		struct tm newTime;
+		time_t t = time(0);
+
+		localtime_s(&newTime, &t);
+		std::strftime(buf, 100, "%Y-%m-%d %H:%M:%S", &newTime);
+		response->get_map()["timestamp"] = string_message::create(buf);
+		#endif
+
+		// Radar & Position
+		// PPS Enum
+		// 0 - Not on Radar
+		// 0 - SSR Correlated
+		// 1 - SSR & PSR Correleated
+		// 2 - SSR Uncorrelated
+		// 2 - SSR & PSR Uncorrelated
+		// 3 - Conflict / MSAW
+		// 4 - Emergency
+		// 5 - SSR Block
+		// 6 - PSR Correlated VFR
+		// 6 - Coasting
+		// 6 - VFR
+		// 7 - RVSM
+		// 8 - PSR
+		// 9 - Extrapolated
+		// 10 - ADSB W/O RVSM
+		// 11 - ADSB RVSM
+		// 12 - ADSB VFR
+		// 13 - ADSB Emergency
+		int pps = -1;
+		std::string ssr = "";
+		double latitude = 0;
+		double longitude = 0;
+
+		int modec = 0;
+		int vs = 0;
+		int groundSpeed = 0;
+		bool ADSB = false;
+
+		if (rt.GetPosition().IsValid())
+		{
+			ssr = rt.GetPosition().GetSquawk();
+
+			latitude = rt.GetPosition().GetPosition().m_Latitude;
+			longitude = rt.GetPosition().GetPosition().m_Longitude;
+
+			if (rt.GetPosition().GetFlightLevel() >= 18000)
+				modec = (rt.GetPosition().GetFlightLevel() + 50) / 100;
+			else
+				modec = (rt.GetPosition().GetPressureAltitude() + 50) / 100;
+
+			vs = rt.GetVerticalSpeed();
+
+			if (rt.GetCorrelatedFlightPlan().IsValid())
+			{
+				switch (rt.GetPosition().GetRadarFlags())
+				{
+					case 
+				}
+			}
+
+			//switch (rt.GetPosition().GetRadarFlags()) {
+			//case 1:
+			//	radarEnum = 2;
+			//	break;
+			//case 2:
+			//	radarEnum = 3;
+			//	break;
+			//case 4:
+			//case 7:
+			//	if (rt.GetCorrelatedFlightPlan().IsValid())
+			//	{
+			//		EuroScopePlugIn::CFlightPlan fp = rt.GetCorrelatedFlightPlan();
+			//		std::string remarks = fp.GetFlightPlanData().GetRemarks();
+
+			//		if (remarks.find("STS/ADSB") || fp.GetFlightPlanData().GetAircraftWtc() != 'L')
+			//			ADSB = true;
+
+			//		radarEnum = 5;
+			//	}
+			//	else
+			//	{
+			//		radarEnum = 4;
+			//	}
+			//}
+		}
+
+		bool MEDEVAC = false;
+		std::string callsign = "";
+		std::string wt = "";
+		std::string reportedAltitude = "";
+		std::string clearedAltitude = "";
+		bool altitudeError = false;
+		int finalAltitude = 0;
+		bool RVSM = false;
+		std::string hocjs = "";
+		int assignedSpeed = -1;
+		int estimatedIas = 0;
+		int estimatedMach = 0;
+
+		std::string acType = "";
+		std::string destination = "";
+		int eta = 0;
+		int distanceToDestination = 0;
+
+		bool RNAV = false;
+		std::string remarks = "";
+
+		bool text = false;
+		bool VFR = false;
+
+		if (rt.GetCorrelatedFlightPlan().IsValid())
+		{
+			EuroScopePlugIn::CFlightPlan fp = rt.GetCorrelatedFlightPlan();
+			std::string remarks = fp.GetFlightPlanData().GetRemarks();
+
+			if (remarks.find("STS/MEDEVAC"))
+				MEDEVAC = true;
+			if (remarks.find("STS/ADSB") || fp.GetFlightPlanData().GetAircraftWtc() != 'L')
+				ADSB = true;
+
+			callsign = fp.GetCallsign();
+
+			switch (fp.GetFlightPlanData().GetAircraftWtc())
+			{
+			case '?':
+				wt = "?";
+				break;
+			case 'L':
+				wt = "-";
+				break;
+			case 'H':
+				wt = "+";
+				break;
+			case 'J':
+				wt = "$";
+				break;
+			}
+
+			reportedAltitude = fp.GetControllerAssignedData().GetFlightStripAnnotation(8);
+
+			int tempAlt = fp.GetControllerAssignedData().GetClearedAltitude();
+			if (tempAlt == 1)
+				clearedAltitude = "CAPR";
+			else if (tempAlt >= 0)
+				clearedAltitude = "C" + std::to_string(tempAlt / 100);
+			else
+				clearedAltitude = "Cclr";
+
+			if (tempAlt + 200 > modec || tempAlt - 200 < modec) {
+				if (rt.GetVerticalSpeed() < 200 && rt.GetVerticalSpeed() > -200)
+					altitudeError = true;
+				else if (tempAlt + 200 > modec && rt.GetVerticalSpeed() > 200)
+					altitudeError = true;
+				else if (tempAlt - 200 < modec && rt.GetVerticalSpeed() < -200)
+					altitudeError = true;
+			}
+
+			finalAltitude = fp.GetFlightPlanData().GetFinalAltitude() / 100;
+
+			if (fp.GetCoordinatedNextControllerState() == 2 || fp.GetCoordinatedNextControllerState() == 3)
+				hocjs = fp.GetHandoffTargetControllerId();
+
+			if (fp.GetControllerAssignedData().GetAssignedMach() > 0)
+				assignedSpeed = fp.GetControllerAssignedData().GetAssignedMach();
+			else if (fp.GetControllerAssignedData().GetAssignedSpeed() > 0)
+				assignedSpeed = fp.GetControllerAssignedData().GetAssignedSpeed();
+
+			if (rt.GetPosition().IsValid())
+			{
+				estimatedIas = fp.GetFlightPlanData().PerformanceGetIas(rt.GetPosition().GetPressureAltitude(), 0);
+				estimatedMach = fp.GetFlightPlanData().PerformanceGetMach(rt.GetPosition().GetFlightLevel(), 0);
+			}
+
+			acType = fp.GetFlightPlanData().GetAircraftFPType();
+			destination = fp.GetFlightPlanData().GetDestination();
+
+			eta = fp.GetPositionPredictions().GetPointsNumber();
+			distanceToDestination = fp.GetDistanceToDestination();
+
+			char capabilites = fp.GetFlightPlanData().GetCapibilities();
+			switch (capabilites) {
+			case 'W':
+			case 'Q':
+				RVSM = true;
+			case 'E':
+			case 'F':
+			case 'R':
+				ADSB = true;
+			case 'Y':
+			case 'C':
+			case 'I':
+			case 'G':
+				RNAV = true;
+				break;
+			}
+			remarks = fp.GetControllerAssignedData().GetScratchPadString();
+
+			if (strcmp(fp.GetFlightPlanData().GetPlanType(), "V") == 0)
+				VFR = true;
+			if (fp.GetFlightPlanData().GetCommunicationType() == 'T')
+				text = true;
+		}
+		//int eta = 0;
+		//int distanceToDestination = 0;
+		//std::string remarks = "";
+
+		response->get_map()["radar"] =										object_message::create();
+		response->get_map()["radar"]->get_map()["code"] =					int_message::create(0);
+		response->get_map()["radar"]->get_map()["ssr"] =					string_message::create(ssr);
+		response->get_map()["radar"]->get_map()["altitude"] =				int_message::create(modec);
+		response->get_map()["radar"]->get_map()["vertical_speed"] =			int_message::create(vs);
+		response->get_map()["radar"]->get_map()["ground_speed"] =			int_message::create(rt.GetGS());
+		response->get_map()["radar"]->get_map()["enum"] =					int_message::create(radarEnum);
+
+		response->get_map()["position"] =									object_message::create();
+		response->get_map()["position"]->get_map()["lat"] =					double_message::create(latitude);
+		response->get_map()["position"]->get_map()["long"] =				double_message::create(longitude);
+
+		response->get_map()["mods"] =										object_message::create();
+		response->get_map()["mods"]->get_map()["medevac"] =					bool_message::create(!MEDEVAC);
+		response->get_map()["mods"]->get_map()["rvsm"] =					bool_message::create(RVSM);
+		response->get_map()["mods"]->get_map()["adsb"] =					bool_message::create(ADSB);
+		response->get_map()["mods"]->get_map()["altitude_error"] =			bool_message::create(altitudeError);
+		response->get_map()["mods"]->get_map()["rnav"] =					bool_message::create(RNAV);
+		response->get_map()["mods"]->get_map()["text"] =					bool_message::create(text);
+		response->get_map()["mods"]->get_map()["vfr"] =						bool_message::create(VFR);
+
+		response->get_map()["general"] =									object_message::create();
+		response->get_map()["general"]->get_map()["callsign"] =				string_message::create(callsign);
+		response->get_map()["general"]->get_map()["wtc"] =					string_message::create(wt);
+		response->get_map()["general"]->get_map()["handoff_cjs"] =			string_message::create(hocjs);
+		response->get_map()["general"]->get_map()["ac_type"] =				string_message::create(acType);
+		response->get_map()["general"]->get_map()["destination"] =			string_message::create(destination);
+		response->get_map()["general"]->get_map()["eta"] =					int_message::create(eta);
+		response->get_map()["general"]->get_map()["distance_to_dest"] =		int_message::create(distanceToDestination);
+
+		response->get_map()["altitude"] =									object_message::create();
+		response->get_map()["altitude"]->get_map()["reported_altitude"] =	string_message::create(reportedAltitude);
+		response->get_map()["altitude"]->get_map()["cleared_altitude"] =	string_message::create(clearedAltitude);
+		response->get_map()["altitude"]->get_map()["filed_altitude"] =		int_message::create(finalAltitude);
+
+		response->get_map()["speed"] =										object_message::create();
+		response->get_map()["speed"]->get_map()["assigned_speed"] =			int_message::create(assignedSpeed);
+		response->get_map()["speed"]->get_map()["estimated_ias"] =			int_message::create(estimatedIas);
+		response->get_map()["speed"]->get_map()["estimated_mach"] =			int_message::create(estimatedMach);
+	}
+	catch (...)
+	{
+		response->get_map()["reason"] = string_message::create("Error occured while getting flight plan data.");
+		response->get_map()["success"] = bool_message::create(false);
+
+		CEXCDSBridge::SendEuroscopeMessage(rt.GetSystemID(), "Error occured while getting flight plan data.", "CANT_GET_DATA");
+	}
+}
+
 void MessageHandler::PrepareFlightPlanDataResponse(EuroScopePlugIn::CFlightPlan fp, message::ptr response)
 {
 	try
@@ -678,6 +941,7 @@ void MessageHandler::PrepareFlightPlanDataResponse(EuroScopePlugIn::CFlightPlan 
 		response->get_map()["altitude"]->get_map()["coordinated"] =				int_message::create(coordinated);
 		response->get_map()["altitude"]->get_map()["filed"] =					string_message::create(filedAltString);
 		response->get_map()["altitude"]->get_map()["final"] =					int_message::create(final);
+		// response->get_map()["altitude"]->get_map()["reported"] =				string_message::create(fp.GetControllerAssignedData().GetFlightStripAnnotation(8));
 
 		// Assigned Data
 		response->get_map()["assigned"] =										object_message::create();
@@ -886,12 +1150,20 @@ void MessageHandler::PrepareFlightPlanDataResponse(EuroScopePlugIn::CFlightPlan 
 		// Determines where to place the strip
 		// 0 - Place the strip in the proposed bay
 		// 1 - Move the strip from proposed to its active panel (if available)
+		// 2 - Place the strip in the inbox
+		// 3 - Do not place the strip in any inbox
 		// Otherwise place it in the bay that it will pass abeam to in the shortest amount of time
 		std::string bay = "0";
 		int bayEstimateTime = 500;
+
+		if (fp.GetSectorEntryMinutes() > 0)
+			bay = "2";
 		
 		response->get_map()["excds_estimates"] = object_message::create();
 		response->get_map()["excds_estimates"]->get_map()["estimates"] = object_message::create();
+
+		if (strcmp(fp.GetGroundState(), "PARK") == 0 || (fp.GetDistanceToDestination() < 3 && fp.GetDistanceFromOrigin() > 3))
+			bay = "3";
 
 		while (NDBSectorElement.IsValid())
 		{
