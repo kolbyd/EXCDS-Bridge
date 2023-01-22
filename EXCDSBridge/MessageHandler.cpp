@@ -631,8 +631,8 @@ void MessageHandler::RequestAircraftByCallsign(sio::event& e)
 
 void MessageHandler::PrepareTargetResponse(EuroScopePlugIn::CRadarTarget rt, message::ptr response)
 {
-	try
-	{
+	//try
+	//{
 		if (!rt.IsValid()) return;
 
 		#if _DEBUG
@@ -675,12 +675,12 @@ void MessageHandler::PrepareTargetResponse(EuroScopePlugIn::CRadarTarget rt, mes
 		int modec = 0;
 		int vs = 0;
 		int groundSpeed = 0;
-		bool ADSB = false;
+		bool ADSB = true;
 		bool RVSM = false;
 		bool RNAV = false;
 		bool ident = false;
 		bool VFR = false;
-		std::string squawk = "";
+		std::string squawk = "0000";
 
 		if (rt.GetPosition().IsValid())
 		{
@@ -708,10 +708,11 @@ void MessageHandler::PrepareTargetResponse(EuroScopePlugIn::CRadarTarget rt, mes
 				std::string remarks = fp.GetFlightPlanData().GetRemarks();
 
 				if (remarks.find("STS/ADSB") || fp.GetFlightPlanData().GetAircraftWtc() != 'L')
-					ADSB = true;
+					ADSB = false;
 
 				char capabilites = fp.GetFlightPlanData().GetCapibilities();
 				switch (capabilites) {
+				case 'L':
 				case 'W':
 				case 'Q':
 					RVSM = true;
@@ -745,7 +746,8 @@ void MessageHandler::PrepareTargetResponse(EuroScopePlugIn::CRadarTarget rt, mes
 			{
 				if (ADSB && rt.GetPosition().GetRadarFlags() != 2)
 				{
-					if (squawk.substr(0, 2).compare("76") == 0 || squawk.substr(0, 2).compare("77") == 0)
+					OutputDebugString("-- ADS-B Target --\n");
+					if (transponderSquawk.substr(0, 2).compare("76") == 0 || transponderSquawk.substr(0, 2).compare("77") == 0)
 						pps = 17;
 					else if (VFR)
 						pps = 16;
@@ -756,18 +758,22 @@ void MessageHandler::PrepareTargetResponse(EuroScopePlugIn::CRadarTarget rt, mes
 				}
 				else
 				{
-					if (squawk.substr(0, 2).compare("76") == 0 || squawk.substr(0, 2).compare("77") == 0)
+					OutputDebugString("-- SSR & PSR Target --\n");
+					if (transponderSquawk.substr(0, 2).compare("76") == 0 || transponderSquawk.substr(0, 2).compare("77") == 0)
 					{
+						OutputDebugString("-- Emergency --\n");
 						// Emergency
 						pps = 6;
 					}
-					else if (squawk.substr(2, 4).compare("00") == 0)
+					else if (transponderSquawk.substr(2, 4).compare("00") == 0)
 					{
+						OutputDebugString("-- SSR Block --\n");
 						// SSR Block
 						pps = 7;
 					}
 					else if (fpSquawk.compare(transponderSquawk) == 0)
 					{
+						OutputDebugString("-- Correlated --\n");
 						if (VFR)
 						{
 							pps = 10;
@@ -776,8 +782,7 @@ void MessageHandler::PrepareTargetResponse(EuroScopePlugIn::CRadarTarget rt, mes
 						{
 							pps = 11;
 						}
-
-						if (rt.GetPosition().GetRadarFlags() == 2)
+						else if (rt.GetPosition().GetRadarFlags() == 2)
 						{
 							pps = 1;
 						}
@@ -788,17 +793,17 @@ void MessageHandler::PrepareTargetResponse(EuroScopePlugIn::CRadarTarget rt, mes
 					}
 					else
 					{
+						OutputDebugString("-- Uncorrelated --\n");
 						if (rt.GetPosition().GetRadarFlags() == 2)
 							pps = 3;
 						else
 							pps = 4;
 					}
-
 				}
 			}
 		}
 
-		bool MEDEVAC = false;
+		bool MEDEVAC = FALSE;
 		std::string callsign = "";
 		std::string wt = "";
 		std::string reportedAltitude = "";
@@ -809,6 +814,8 @@ void MessageHandler::PrepareTargetResponse(EuroScopePlugIn::CRadarTarget rt, mes
 		int assignedSpeed = -1;
 		int estimatedIas = 0;
 		int estimatedMach = 0;
+		int trackingState = 0;
+		std::string cjs = "";
 
 		std::string acType = "";
 		std::string destination = "";
@@ -823,8 +830,16 @@ void MessageHandler::PrepareTargetResponse(EuroScopePlugIn::CRadarTarget rt, mes
 			EuroScopePlugIn::CFlightPlan fp = rt.GetCorrelatedFlightPlan();
 			std::string remarks = fp.GetFlightPlanData().GetRemarks();
 
+			trackingState = fp.GetFPState();
+			cjs = fp.GetTrackingControllerId();
+
+			if (fp.GetState() == 7)
+			{
+				// Implement next controller frequency
+			}
+
 			if (remarks.find("STS/MEDEVAC"))
-				MEDEVAC = true;
+				MEDEVAC = TRUE;
 
 			callsign = fp.GetCallsign();
 
@@ -849,17 +864,24 @@ void MessageHandler::PrepareTargetResponse(EuroScopePlugIn::CRadarTarget rt, mes
 			int tempAlt = fp.GetControllerAssignedData().GetClearedAltitude();
 			if (tempAlt == 1)
 				clearedAltitude = "CAPR";
-			else if (tempAlt >= 0)
+			else if (tempAlt == 0)
+			{
+				tempAlt = fp.GetFinalAltitude();
+				clearedAltitude = "C" + std::to_string(fp.GetFinalAltitude() / 100);
+			}
+			else if (tempAlt > 0)
 				clearedAltitude = "C" + std::to_string(tempAlt / 100);
 			else
 				clearedAltitude = "Cclr";
 
-			if (tempAlt + 200 > modec || tempAlt - 200 < modec) {
+			int alt = modec * 100;
+
+			if (alt > tempAlt + 200 || alt < tempAlt - 200 ) {
 				if (rt.GetVerticalSpeed() < 200 && rt.GetVerticalSpeed() > -200)
 					altitudeError = true;
-				else if (tempAlt + 200 > modec && rt.GetVerticalSpeed() > 200)
+				if (alt < tempAlt - 200 && rt.GetVerticalSpeed() < -200)
 					altitudeError = true;
-				else if (tempAlt - 200 < modec && rt.GetVerticalSpeed() < -200)
+				if (alt > tempAlt + 200 && rt.GetVerticalSpeed() > 200)
 					altitudeError = true;
 			}
 
@@ -927,22 +949,24 @@ void MessageHandler::PrepareTargetResponse(EuroScopePlugIn::CRadarTarget rt, mes
 		response->get_map()["general"]->get_map()["distance_to_dest"] =		int_message::create(distanceToDestination);
 
 		response->get_map()["altitude"] =									object_message::create();
-		response->get_map()["altitude"]->get_map()["reported_altitude"] =	string_message::create(reportedAltitude);
-		response->get_map()["altitude"]->get_map()["cleared_altitude"] =	string_message::create(clearedAltitude);
-		response->get_map()["altitude"]->get_map()["filed_altitude"] =		int_message::create(finalAltitude);
+		response->get_map()["altitude"]->get_map()["reported"] =			string_message::create(reportedAltitude);
+		response->get_map()["altitude"]->get_map()["cleared"] =				string_message::create(clearedAltitude);
+		response->get_map()["altitude"]->get_map()["filed"] =				int_message::create(finalAltitude);
 
 		response->get_map()["speed"] =										object_message::create();
 		response->get_map()["speed"]->get_map()["assigned_speed"] =			int_message::create(assignedSpeed);
 		response->get_map()["speed"]->get_map()["estimated_ias"] =			int_message::create(estimatedIas);
 		response->get_map()["speed"]->get_map()["estimated_mach"] =			int_message::create(estimatedMach);
-	}
-	catch (...)
-	{
-		response->get_map()["reason"] = string_message::create("Error occured while getting flight plan data.");
-		response->get_map()["success"] = bool_message::create(false);
 
-		CEXCDSBridge::SendEuroscopeMessage(rt.GetSystemID(), "Error occured while getting flight plan data.", "CANT_GET_DATA");
-	}
+		response->get_map()["id"] =											string_message::create(rt.GetSystemID());
+	//}
+	//catch (...)
+	//{
+	//	response->get_map()["reason"] = string_message::create("Error occured while getting flight plan data.");
+	//	response->get_map()["success"] = bool_message::create(false);
+
+	//	CEXCDSBridge::SendEuroscopeMessage(rt.GetSystemID(), "Error occured while getting flight plan data.", "CANT_GET_DATA");
+	//}
 }
 
 void MessageHandler::PrepareFlightPlanDataResponse(EuroScopePlugIn::CFlightPlan fp, message::ptr response)
