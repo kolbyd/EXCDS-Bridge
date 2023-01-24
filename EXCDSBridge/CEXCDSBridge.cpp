@@ -23,8 +23,8 @@ CEXCDSBridge* instance;
 
 CEXCDSBridge::CEXCDSBridge() :
 	EuroScopePlugIn::CPlugIn(
-		EuroScopePlugIn::COMPATIBILITY_CODE, 
-		PLUGIN_NAME, 
+		EuroScopePlugIn::COMPATIBILITY_CODE,
+		PLUGIN_NAME,
 		PLUGIN_VERSION,
 		PLUGIN_AUTHOR,
 		PLUGIN_LICENSE
@@ -78,33 +78,82 @@ void CEXCDSBridge::bind_events()
 	socketClient.socket()->on("REQUEST_FP_DATA_CALLSIGN", std::bind(&MessageHandler::RequestAircraftByCallsign, &messageHandler, std::placeholders::_1));
 }
 
+std::vector<std::string> departureAirports = {};
+std::vector<std::string> arrivalAirports = {};
+
 void CEXCDSBridge::OnTimer(int Counter)
 {
-		CEXCDSBridge* bridgeInstance = CEXCDSBridge::GetInstance();
-		EuroScopePlugIn::CFlightPlan flightPlan = bridgeInstance->FlightPlanSelectFirst();
-		EuroScopePlugIn::CRadarTarget radarTarget = bridgeInstance->RadarTargetSelectFirst();
-	
-		while (flightPlan.IsValid()) {
-			if (flightPlan.GetState() > 0)
-			{
-				sio::message::ptr response = sio::object_message::create();
-				MessageHandler::PrepareFlightPlanDataResponse(flightPlan, response);
-	
-				bridgeInstance->GetSocket()->emit("SEND_FP_DATA", response);
-			}
-	
-			flightPlan = bridgeInstance->FlightPlanSelectNext(flightPlan);
-		}
+	CEXCDSBridge* bridgeInstance = CEXCDSBridge::GetInstance();
+	EuroScopePlugIn::CFlightPlan flightPlan = bridgeInstance->FlightPlanSelectFirst();
+	EuroScopePlugIn::CRadarTarget radarTarget = bridgeInstance->RadarTargetSelectFirst();
 
-		while (radarTarget.IsValid()) {
+	while (flightPlan.IsValid()) {
+		if (flightPlan.GetState() > 0)
+		{
 			sio::message::ptr response = sio::object_message::create();
-			MessageHandler::PrepareTargetResponse(radarTarget, response);
+			MessageHandler::PrepareFlightPlanDataResponse(flightPlan, response);
 
-			bridgeInstance->GetSocket()->emit("SEND_RT_DATA", response);
-
-
-			radarTarget = bridgeInstance->RadarTargetSelectNext(radarTarget);
+			bridgeInstance->GetSocket()->emit("SEND_FP_DATA", response);
 		}
+
+		flightPlan = bridgeInstance->FlightPlanSelectNext(flightPlan);
+	}
+
+	while (radarTarget.IsValid()) {
+		sio::message::ptr response = sio::object_message::create();
+		MessageHandler::PrepareTargetResponse(radarTarget, response);
+
+		bridgeInstance->GetSocket()->emit("SEND_RT_DATA", response);
+
+
+		radarTarget = bridgeInstance->RadarTargetSelectNext(radarTarget);
+	}
+
+	flightPlan = bridgeInstance->FlightPlanSelectFirst();
+
+	std::vector<std::string> vfrCollector = {};
+	std::vector<std::string> vfrControl = {};
+	std::vector<std::string> departures = {};
+	std::vector<std::string> arrivals = {};
+	std::vector<std::string> abNoIfr = {};
+
+	if (departureAirports.size() == 0) {
+		for (EuroScopePlugIn::CSectorElement airport = bridgeInstance->SectorFileElementSelectFirst(EuroScopePlugIn::SECTOR_ELEMENT_AIRPORT); airport.IsValid(); airport = bridgeInstance->SectorFileElementSelectNext(airport, EuroScopePlugIn::SECTOR_ELEMENT_AIRPORT))
+		{
+			if (airport.IsElementActive(true))
+				departureAirports.push_back(airport.GetName());
+
+			if (airport.IsElementActive(false))
+				arrivalAirports.push_back(airport.GetName());
+		}
+	}
+
+	while (flightPlan.IsValid())
+	{
+		if (flightPlan.GetState() == 0) {
+			flightPlan = bridgeInstance->FlightPlanSelectNext(flightPlan);
+			continue;
+		};
+
+		if (strcmp(flightPlan.GetFlightPlanData().GetPlanType(), "V") == 0)
+		{
+			if (flightPlan.GetState() == 5)
+				vfrControl.push_back(flightPlan.GetCallsign());
+			else
+				vfrCollector.push_back(flightPlan.GetCallsign());
+		}
+		else if (flightPlan.GetState() > 1)
+		{
+			if (std::find(departureAirports.begin(), departureAirports.end(), flightPlan.GetFlightPlanData().GetOrigin()) != departureAirports.end())
+				departures.push_back(flightPlan.GetCallsign());
+			if (std::find(arrivalAirports.begin(), arrivalAirports.end(), flightPlan.GetFlightPlanData().GetDestination()) != arrivalAirports.end())
+				arrivals.push_back(flightPlan.GetCallsign());
+		}
+
+		flightPlan = bridgeInstance->FlightPlanSelectNext(flightPlan);
+	}
+
+	bridgeInstance->GetSocket()->emit("Complete");
 }
 
 void CEXCDSBridge::OnFlightPlanDisconnect(EuroScopePlugIn::CFlightPlan FlightPlan)
