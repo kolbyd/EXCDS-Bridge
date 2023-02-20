@@ -12,6 +12,8 @@ public:
     CEXCDSBridge();
     virtual ~CEXCDSBridge();
 
+    void OnAirportRunwayActivityChanged();
+
     void OnTimer(int Counter);
 
     // Listens to EuroScope

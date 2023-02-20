@@ -81,42 +81,27 @@ void CEXCDSBridge::bind_events()
 std::vector<std::string> departureAirports = {};
 std::vector<std::string> arrivalAirports = {};
 
+std::vector<std::tuple<std::string, std::string, std::string>> UnencodedEXCDSEstimatePositions;
+std::vector<std::tuple<EuroScopePlugIn::CPosition, std::string>> EXCDSEstimatePositions;
+
+void CEXCDSBridge::OnAirportRunwayActivityChanged()
+{
+	CEXCDSBridge* bridgeInstance = CEXCDSBridge::GetInstance();
+
+	for (EuroScopePlugIn::CSectorElement airport = bridgeInstance->SectorFileElementSelectFirst(EuroScopePlugIn::SECTOR_ELEMENT_AIRPORT); airport.IsValid(); airport = bridgeInstance->SectorFileElementSelectNext(airport, EuroScopePlugIn::SECTOR_ELEMENT_AIRPORT))
+	{
+		if (airport.IsElementActive(true))
+			departureAirports.push_back(airport.GetName());
+
+		if (airport.IsElementActive(false))
+			arrivalAirports.push_back(airport.GetName());
+	}
+
+}
+
 void CEXCDSBridge::OnTimer(int Counter)
 {
 	CEXCDSBridge* bridgeInstance = CEXCDSBridge::GetInstance();
-	EuroScopePlugIn::CFlightPlan flightPlan = bridgeInstance->FlightPlanSelectFirst();
-	EuroScopePlugIn::CRadarTarget radarTarget = bridgeInstance->RadarTargetSelectFirst();
-
-	while (flightPlan.IsValid()) {
-		if (flightPlan.GetState() > 0)
-		{
-			sio::message::ptr response = sio::object_message::create();
-			MessageHandler::PrepareFlightPlanDataResponse(flightPlan, response);
-
-			bridgeInstance->GetSocket()->emit("SEND_FP_DATA", response);
-		}
-
-		flightPlan = bridgeInstance->FlightPlanSelectNext(flightPlan);
-	}
-
-	while (radarTarget.IsValid()) {
-		sio::message::ptr response = sio::object_message::create();
-		MessageHandler::PrepareTargetResponse(radarTarget, response);
-
-		bridgeInstance->GetSocket()->emit("SEND_RT_DATA", response);
-
-
-		radarTarget = bridgeInstance->RadarTargetSelectNext(radarTarget);
-	}
-
-	flightPlan = bridgeInstance->FlightPlanSelectFirst();
-
-	std::vector<std::string> vfrCollector = {};
-	std::vector<std::string> vfrControl = {};
-	std::vector<std::string> departures = {};
-	std::vector<std::string> arrivals = {};
-	std::vector<std::string> abNoIfr = {};
-
 	if (departureAirports.size() == 0) {
 		for (EuroScopePlugIn::CSectorElement airport = bridgeInstance->SectorFileElementSelectFirst(EuroScopePlugIn::SECTOR_ELEMENT_AIRPORT); airport.IsValid(); airport = bridgeInstance->SectorFileElementSelectNext(airport, EuroScopePlugIn::SECTOR_ELEMENT_AIRPORT))
 		{
@@ -128,31 +113,198 @@ void CEXCDSBridge::OnTimer(int Counter)
 		}
 	}
 
-	while (flightPlan.IsValid())
+	if (Counter < 1)
 	{
+		UnencodedEXCDSEstimatePositions.emplace_back("");
+
+		for (int i = 0; i < UnencodedEXCDSEstimatePositions.size(); i++)
+		{
+			EuroScopePlugIn::CPosition pos;
+			EXCDSEstimatePositions.emplace_back(pos.LoadFromStrings(UnencodedEXCDSEstimatePositions[i][0], UnencodedEXCDSEstimatePositions[i][1]));
+
+		}
+	}
+
+	EuroScopePlugIn::CFlightPlan flightPlan = bridgeInstance->FlightPlanSelectFirst();
+	EuroScopePlugIn::CRadarTarget radarTarget = bridgeInstance->RadarTargetSelectFirst();
+
+	sio::message::ptr lists = sio::object_message::create();
+	lists->get_map()["vfr_collector"] = sio::object_message::create();
+	lists->get_map()["vfr_control"] = sio::object_message::create();
+	lists->get_map()["departures"] = sio::object_message::create();
+	lists->get_map()["arrivals"] = sio::object_message::create();
+	lists->get_map()["apt_arrivals"] = sio::object_message::create();
+
+	while (flightPlan.IsValid()) {
 		if (flightPlan.GetState() == 0) {
 			flightPlan = bridgeInstance->FlightPlanSelectNext(flightPlan);
 			continue;
 		};
 
+		// Generic
+		std::string callsign = flightPlan.GetCallsign();
+
+		std::string wtcat = " ";
+		switch (flightPlan.GetFlightPlanData().GetAircraftWtc()) {
+		case 'L':
+			wtcat = "-";
+			break;
+		case 'H':
+			wtcat = "+";
+			break;
+		case 'J':
+			wtcat = "J";
+			break;
+		}
+
+		std::string scratchpad = flightPlan.GetControllerAssignedData().GetScratchPadString();
+		std::string sfi = scratchpad.length() == 1 ? scratchpad : "";
+
+		std::string cjs = flightPlan.GetTrackingControllerId();
+
+		std::string type = flightPlan.GetFlightPlanData().GetAircraftFPType();
+
+		std::string transponder = flightPlan.GetControllerAssignedData().GetSquawk();
+
+		int clearedAltitude = flightPlan.GetControllerAssignedData().GetClearedAltitude() == 0 ? flightPlan.GetFlightPlanData().GetFinalAltitude() : flightPlan.GetControllerAssignedData().GetClearedAltitude();
+
+		std::string remarks = flightPlan.GetFlightPlanData().GetRemarks();
+		bool medevac = false;
+		if (remarks.find("STS/MEDEVAC") > 0)
+			medevac = true;
+
+		// ModeC
+		int modeC = -1;
+		std::string vmi = "";
+		std::string currentAltitude = "";
+		if (flightPlan.GetCorrelatedRadarTarget().IsValid())
+		{
+			if (flightPlan.GetCorrelatedRadarTarget().GetPosition().GetFlightLevel() >= 18000)
+				modeC = (flightPlan.GetCorrelatedRadarTarget().GetPosition().GetFlightLevel() + 50) / 100;
+			else
+				modeC = (flightPlan.GetCorrelatedRadarTarget().GetPosition().GetPressureAltitude() + 50) / 100;
+
+			if (flightPlan.GetCorrelatedRadarTarget().GetVerticalSpeed() > 200)
+				vmi = "^";
+			else if (flightPlan.GetCorrelatedRadarTarget().GetVerticalSpeed() < -200)
+				vmi = "|";
+			else if (modeC - 200 > clearedAltitude)
+				vmi = "\\";
+			else if (modeC + 200 < clearedAltitude)
+				vmi = "/";
+		}
+		if (clearedAltitude == 1 || clearedAltitude == 2)
+			currentAltitude = "APR";
+		else
+			currentAltitude = std::to_string(clearedAltitude / 100);
+
+		// Arrival data
+		std::string ades = flightPlan.GetFlightPlanData().GetDestination();
+		ades = ades.length() == 4 ? ades : "ZZZZ";
+		int eta = flightPlan.GetPositionPredictions().GetPointsNumber();
+		std::string arrivalRunway = flightPlan.GetFlightPlanData().GetArrivalRwy();
+
+		// Departure data
+		std::string adep = flightPlan.GetFlightPlanData().GetOrigin();
+		adep = adep.length() == 4 ? adep : "ZZZz";
+		std::string etd = flightPlan.GetFlightPlanData().GetEstimatedDepartureTime();
+		std::string finalAlt = "fld";
+		if (flightPlan.GetFlightPlanData().GetFinalAltitude())
+			finalAlt = std::to_string(flightPlan.GetFinalAltitude() / 100);
+
 		if (strcmp(flightPlan.GetFlightPlanData().GetPlanType(), "V") == 0)
 		{
-			if (flightPlan.GetState() == 5)
-				vfrControl.push_back(flightPlan.GetCallsign());
-			else
-				vfrCollector.push_back(flightPlan.GetCallsign());
+			if (flightPlan.GetState() == EuroScopePlugIn::FLIGHT_PLAN_STATE_ASSUMED)
+			{
+				lists->get_map()["vfr_control"]->get_map()[callsign] = sio::object_message::create();
+				lists->get_map()["vfr_control"]->get_map()[callsign]->get_map()["0"] = sio::string_message::create(callsign);
+				lists->get_map()["vfr_control"]->get_map()[callsign]->get_map()["1"] = sio::string_message::create(wtcat);
+				lists->get_map()["vfr_control"]->get_map()[callsign]->get_map()["2"] = sio::string_message::create(sfi);
+				lists->get_map()["vfr_control"]->get_map()[callsign]->get_map()["3"] = sio::string_message::create(ades);
+			}
+			else if (flightPlan.GetState() > 1)
+			{
+				lists->get_map()["vfr_collector"]->get_map()[callsign] = sio::object_message::create();
+				lists->get_map()["vfr_collector"]->get_map()[callsign]->get_map()["0"] = sio::string_message::create(callsign);
+				lists->get_map()["vfr_collector"]->get_map()[callsign]->get_map()["1"] = sio::string_message::create(wtcat);
+				lists->get_map()["vfr_collector"]->get_map()[callsign]->get_map()["2"] = sio::string_message::create(sfi);
+				lists->get_map()["vfr_collector"]->get_map()[callsign]->get_map()["3"] = sio::string_message::create(ades);
+			}
 		}
-		else if (flightPlan.GetState() > 1)
+		else if (flightPlan.GetState() > EuroScopePlugIn::FLIGHT_PLAN_STATE_NON_CONCERNED)
 		{
-			if (std::find(departureAirports.begin(), departureAirports.end(), flightPlan.GetFlightPlanData().GetOrigin()) != departureAirports.end())
-				departures.push_back(flightPlan.GetCallsign());
-			if (std::find(arrivalAirports.begin(), arrivalAirports.end(), flightPlan.GetFlightPlanData().GetDestination()) != arrivalAirports.end())
-				arrivals.push_back(flightPlan.GetCallsign());
+			if (flightPlan.GetFPState() == EuroScopePlugIn::FLIGHT_PLAN_STATE_NOT_STARTED &&
+				std::find(departureAirports.begin(), departureAirports.end(), flightPlan.GetFlightPlanData().GetOrigin()) != departureAirports.end())
+			{
+				lists->get_map()["departures"]->get_map()[callsign] = sio::object_message::create();
+				lists->get_map()["departures"]->get_map()[callsign]->get_map()["0"] = sio::bool_message::create(medevac);
+				lists->get_map()["departures"]->get_map()[callsign]->get_map()["1"] = sio::string_message::create(cjs);
+				lists->get_map()["departures"]->get_map()[callsign]->get_map()["2"] = sio::string_message::create(callsign);
+				lists->get_map()["departures"]->get_map()[callsign]->get_map()["3"] = sio::string_message::create(wtcat);
+				lists->get_map()["departures"]->get_map()[callsign]->get_map()["4"] = sio::string_message::create(sfi);
+				lists->get_map()["departures"]->get_map()[callsign]->get_map()["5"] = sio::string_message::create(transponder);
+				lists->get_map()["departures"]->get_map()[callsign]->get_map()["6"] = sio::string_message::create(type);
+				lists->get_map()["departures"]->get_map()[callsign]->get_map()["7"] = sio::string_message::create(adep);
+				lists->get_map()["departures"]->get_map()[callsign]->get_map()["8"] = sio::string_message::create(finalAlt);
+				lists->get_map()["departures"]->get_map()[callsign]->get_map()["9"] = sio::string_message::create(ades);
+				lists->get_map()["departures"]->get_map()[callsign]->get_map()["10"] = sio::string_message::create(etd);
+			}
+			if ((flightPlan.GetState() == EuroScopePlugIn::FLIGHT_PLAN_STATE_ASSUMED || flightPlan.GetState() == EuroScopePlugIn::FLIGHT_PLAN_STATE_COORDINATED || flightPlan.GetState() == EuroScopePlugIn::FLIGHT_PLAN_STATE_TRANSFER_TO_ME_INITIATED) &&
+				(std::find(arrivalAirports.begin(), arrivalAirports.end(), flightPlan.GetFlightPlanData().GetDestination()) != arrivalAirports.end()))
+			{
+				lists->get_map()["arrivals"]->get_map()[callsign] = sio::object_message::create();
+				lists->get_map()["arrivals"]->get_map()[callsign]->get_map()["0"] = sio::bool_message::create(medevac);
+				lists->get_map()["arrivals"]->get_map()[callsign]->get_map()["1"] = sio::string_message::create(cjs);
+				lists->get_map()["arrivals"]->get_map()[callsign]->get_map()["2"] = sio::string_message::create(callsign);
+				lists->get_map()["arrivals"]->get_map()[callsign]->get_map()["3"] = sio::string_message::create(wtcat);
+				lists->get_map()["arrivals"]->get_map()[callsign]->get_map()["4"] = sio::string_message::create(sfi);
+				lists->get_map()["arrivals"]->get_map()[callsign]->get_map()["5"] = sio::string_message::create(transponder);
+				lists->get_map()["arrivals"]->get_map()[callsign]->get_map()["6"] = sio::string_message::create(type);
+				lists->get_map()["arrivals"]->get_map()[callsign]->get_map()["7"] = sio::int_message::create(modeC);
+				lists->get_map()["arrivals"]->get_map()[callsign]->get_map()["8"] = sio::string_message::create(vmi);
+				lists->get_map()["arrivals"]->get_map()[callsign]->get_map()["9"] = sio::string_message::create(currentAltitude);
+				lists->get_map()["arrivals"]->get_map()[callsign]->get_map()["10"] = sio::string_message::create(ades);
+				lists->get_map()["arrivals"]->get_map()[callsign]->get_map()["11"] = sio::int_message::create(eta);
+				lists->get_map()["arrivals"]->get_map()[callsign]->get_map()["12"] = sio::string_message::create(arrivalRunway);
+			}
 		}
+
+		sio::message::ptr response = sio::object_message::create();
+		MessageHandler::PrepareFlightPlanDataResponse(flightPlan, response);
+
+		bridgeInstance->GetSocket()->emit("SEND_FP_DATA", response);
 
 		flightPlan = bridgeInstance->FlightPlanSelectNext(flightPlan);
 	}
 
+	bridgeInstance->GetSocket()->emit("SEND_LIST_DATA", lists);
+
+	while (radarTarget.IsValid()) {
+		sio::message::ptr response = sio::object_message::create();
+		MessageHandler::PrepareTargetResponse(radarTarget, response);
+
+		bridgeInstance->GetSocket()->emit("SEND_RT_DATA", response);
+
+		radarTarget = bridgeInstance->RadarTargetSelectNext(radarTarget);
+	}
+
+	sio::message::ptr response = sio::object_message::create();
+
+	EuroScopePlugIn::CController controller = bridgeInstance->ControllerSelectFirst();
+	while (controller.IsValid())
+	{
+		std::string controllerId = controller.GetPositionId();
+		std::string controllerCallsign = controller.GetCallsign();
+		double controllerFrequency = controller.GetPrimaryFrequency();
+
+		response->get_map()[controllerId] = sio::object_message::create();
+		response->get_map()[controllerId]->get_map()["callsign"] = sio::string_message::create(controllerCallsign);
+		response->get_map()[controllerId]->get_map()["frequency"] = sio::double_message::create(controllerFrequency);
+
+		controller = bridgeInstance->ControllerSelectNext(controller);
+	}
+
+	bridgeInstance->GetSocket()->emit("SEND_CTRLR_DATA", response);
 	bridgeInstance->GetSocket()->emit("Complete");
 }
 
