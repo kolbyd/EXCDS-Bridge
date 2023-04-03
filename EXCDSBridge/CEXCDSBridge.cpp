@@ -78,27 +78,6 @@ void CEXCDSBridge::bind_events()
 	socketClient.socket()->on("REQUEST_FP_DATA_CALLSIGN", std::bind(&MessageHandler::RequestAircraftByCallsign, &messageHandler, std::placeholders::_1));
 }
 
-//std::vector<std::string> departureAirports = {};
-//std::vector<std::string> arrivalAirports = {};
-//
-//std::vector<std::tuple<std::string, std::string, std::string>> UnencodedEXCDSEstimatePositions;
-//std::vector<std::tuple<EuroScopePlugIn::CPosition, std::string>> EXCDSEstimatePositions;
-//
-//void CEXCDSBridge::OnAirportRunwayActivityChanged()
-//{
-//	CEXCDSBridge* bridgeInstance = CEXCDSBridge::GetInstance();
-//
-//	for (EuroScopePlugIn::CSectorElement airport = bridgeInstance->SectorFileElementSelectFirst(EuroScopePlugIn::SECTOR_ELEMENT_AIRPORT); airport.IsValid(); airport = bridgeInstance->SectorFileElementSelectNext(airport, EuroScopePlugIn::SECTOR_ELEMENT_AIRPORT))
-//	{
-//		if (airport.IsElementActive(true))
-//			departureAirports.push_back(airport.GetName());
-//
-//		if (airport.IsElementActive(false))
-//			arrivalAirports.push_back(airport.GetName());
-//	}
-//
-//}
-
 void CEXCDSBridge::OnTimer(int Counter)
 {
 	CEXCDSBridge* bridgeInstance = CEXCDSBridge::GetInstance();
@@ -121,21 +100,21 @@ void CEXCDSBridge::OnTimer(int Counter)
 
 	sio::message::ptr response = sio::object_message::create();
 
-	//EuroScopePlugIn::CController controller = bridgeInstance->ControllerSelectFirst();
-	//while (controller.IsValid())
-	//{
-	//	std::string controllerId = controller.GetPositionId();
-	//	std::string controllerCallsign = controller.GetCallsign();
-	//	double controllerFrequency = controller.GetPrimaryFrequency();
+	EuroScopePlugIn::CController controller = bridgeInstance->ControllerSelectFirst();
+	while (controller.IsValid())
+	{
+		std::string controllerId = controller.GetPositionId();
+		std::string controllerCallsign = controller.GetCallsign();
+		double controllerFrequency = controller.GetPrimaryFrequency();
 
-	//	response->get_map()[controllerId] = sio::object_message::create();
-	//	response->get_map()[controllerId]->get_map()["callsign"] = sio::string_message::create(controllerCallsign);
-	//	response->get_map()[controllerId]->get_map()["frequency"] = sio::double_message::create(controllerFrequency);
+		response->get_map()[controllerId] = sio::object_message::create();
+		response->get_map()[controllerId]->get_map()["callsign"] = sio::string_message::create(controllerCallsign);
+		response->get_map()[controllerId]->get_map()["frequency"] = sio::double_message::create(controllerFrequency);
 
-	//	controller = bridgeInstance->ControllerSelectNext(controller);
-	//}
+		controller = bridgeInstance->ControllerSelectNext(controller);
+	}
 
-	//bridgeInstance->GetSocket()->emit("SEND_CTRLR_DATA", response);
+	bridgeInstance->GetSocket()->emit("SEND_CTRLR_DATA", response);
 	bridgeInstance->GetSocket()->emit("Complete");
 }
 

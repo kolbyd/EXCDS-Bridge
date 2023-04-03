@@ -1312,7 +1312,8 @@ void MessageHandler::PrepareFlightPlanDataResponse(EuroScopePlugIn::CFlightPlan 
 
 		response->get_map()["estimates"] = object_message::create();
 		response->get_map()["estimates"]->get_map()["enroute"] = object_message::create();
-		int closestBayDistance = 800;
+		int closestBayDistance = 1000;
+		//int closestBayTime = 500;
 		std::string closestBayName = "";
 
 		for (int i = 0; i < estimates.size(); i++)
@@ -1334,12 +1335,14 @@ void MessageHandler::PrepareFlightPlanDataResponse(EuroScopePlugIn::CFlightPlan 
 				}
 				else
 				{
-					response->get_map()["estimates"]->get_map()["enroute"]->get_map()[std::get<0>(fix)] = int_message::create(j);
+					std::string fixName = std::get<0>(fix);
+					response->get_map()["estimates"]->get_map()["enroute"]->get_map()[fixName] = int_message::create(j);
 
-					if (j < closestBayDistance)
+					double displacement = sqrt(pow(distance, 2) + pow(fp.GetPositionPredictions().GetPosition(0).DistanceTo(posn), 2));
+					if (displacement < closestBayDistance)
 					{
-						closestBayName = std::get<0>(fix);
-						closestBayDistance = distance;
+						closestBayDistance = displacement;
+						closestBayName = fixName;
 					}
 
 					break;
