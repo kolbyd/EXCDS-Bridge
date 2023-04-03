@@ -12,9 +12,10 @@ public:
     CEXCDSBridge();
     virtual ~CEXCDSBridge();
 
-    void OnAirportRunwayActivityChanged();
+    // void OnAirportRunwayActivityChanged();
 
     void OnTimer(int Counter);
+    void OnRadarTargetPositionUpdate(EuroScopePlugIn::CRadarTarget rt);
 
     // Listens to EuroScope
     //void OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan FlightPlan);

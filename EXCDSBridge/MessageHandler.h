@@ -20,7 +20,7 @@ public:
 	void RequestAllAircraft(sio::event&);
 	void RequestAircraftByCallsign(sio::event&);
 	static void PrepareFlightPlanDataResponse(EuroScopePlugIn::CFlightPlan fp, sio::message::ptr response);
-	static void PrepareTargetResponse(EuroScopePlugIn::CRadarTarget rt, sio::message::ptr response);
+	static void PrepareRadarTargetResponse(EuroScopePlugIn::CRadarTarget rt, sio::message::ptr response);
 	void RequestDirectTo(sio::event&);
 
 private:
