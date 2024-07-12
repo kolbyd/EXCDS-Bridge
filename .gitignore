@@ -29,7 +29,7 @@
 *.la
 *.a
 *.lib
-!EXCDSBridge/lib/EuroScopePlugInDll.lib
+!euroscope/EuroScopePlugInDll.lib
 
 # Executables
 *.exe
