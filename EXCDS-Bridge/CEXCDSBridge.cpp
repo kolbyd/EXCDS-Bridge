@@ -13,7 +13,7 @@
 #define PLUGIN_LICENSE	"Attribution-ShareAlike 4.0 International (CC BY-SA 4.0)"
 
 const std::string BRIDGE_HOST = "http://127.0.0.1";
-const std::string BRIDGE_PORT = "7500";
+const std::string BRIDGE_PORT = "7501";
 
 // The socket connection between the EXCDS program and EuroScope
 sio::client socketClient;
@@ -57,16 +57,16 @@ void CEXCDSBridge::bind_events()
 	MessageHandler messageHandler;
 
 	// Messages FROM EXCDS, to update aircraft in EuroScope
+	socketClient.socket()->on("UPDATE_TIME", std::bind(&MessageHandler::UpdateTime, &messageHandler, std::placeholders::_1));
 	socketClient.socket()->on("UPDATE_ALTITUDE", std::bind(&MessageHandler::UpdateAltitude, &messageHandler, std::placeholders::_1));
 	socketClient.socket()->on("UPDATE_SPEED", std::bind(&MessageHandler::UpdateSpeed, &messageHandler, std::placeholders::_1));
-	socketClient.socket()->on("UPDATE_FLIGHTPLAN", std::bind(&MessageHandler::UpdateFlightPlan, &messageHandler, std::placeholders::_1));
 	socketClient.socket()->on("UPDATE_STATUS", std::bind(&MessageHandler::UpdateAircraftStatus, &messageHandler, std::placeholders::_1));
-	socketClient.socket()->on("UPDATE_DEPARTURE_INSTRUCTIONS", std::bind(&MessageHandler::UpdateDepartureInstructions, &messageHandler, std::placeholders::_1));
-	socketClient.socket()->on("UPDATE_ARRIVAL_INSTRUCTIONS", std::bind(&MessageHandler::UpdateArrivalInstructions, &messageHandler, std::placeholders::_1));
 	socketClient.socket()->on("UPDATE_TRACKING_STATUS", std::bind(&MessageHandler::UpdateTrackingStatus, &messageHandler, std::placeholders::_1));
-	socketClient.socket()->on("UPDATE_ESTIMATE", std::bind(&MessageHandler::UpdateEstimate, &messageHandler, std::placeholders::_1));
 	socketClient.socket()->on("UPDATE_DIRECT", std::bind(&MessageHandler::UpdateDirectTo, &messageHandler, std::placeholders::_1));
 	socketClient.socket()->on("UPDATE_FLIGHT_PLAN", std::bind(&MessageHandler::UpdateFlightPlan, &messageHandler, std::placeholders::_1));
+	socketClient.socket()->on("UPDATE_SCRATCHPAD", std::bind(&MessageHandler::UpdateScratchPad, &messageHandler, std::placeholders::_1));
+	socketClient.socket()->on("UPDATE_ROUTE", std::bind(&MessageHandler::UpdateRoute, &messageHandler, std::placeholders::_1));
+	socketClient.socket()->on("NEW_FLIGHT_PLAN", std::bind(&MessageHandler::HandleNewFlightPlan, &messageHandler, std::placeholders::_1));
 
 	// Interacts with SITU
 	socketClient.socket()->on("REQUEST_RELEASE", std::bind(&MessageHandler::UpdateSitu, &messageHandler, std::placeholders::_1));
@@ -78,18 +78,15 @@ void CEXCDSBridge::bind_events()
 	socketClient.socket()->on("REQUEST_FP_DATA_CALLSIGN", std::bind(&MessageHandler::RequestAircraftByCallsign, &messageHandler, std::placeholders::_1));
 }
 
-void CEXCDSBridge::OnTimer(int Counter)
+void CEXCDSBridge::OnTimer(int counter)
 {
+	if (counter % 5 != 0) return;
+
 	CEXCDSBridge* bridgeInstance = CEXCDSBridge::GetInstance();
 
 	EuroScopePlugIn::CFlightPlan flightPlan = bridgeInstance->FlightPlanSelectFirst();
 
 	while (flightPlan.IsValid()) {
-		if (flightPlan.GetState() == 0) {
-			flightPlan = bridgeInstance->FlightPlanSelectNext(flightPlan);
-			continue;
-		};
-
 		sio::message::ptr response = sio::object_message::create();
 		MessageHandler::PrepareFlightPlanDataResponse(flightPlan, response);
 
@@ -100,22 +97,39 @@ void CEXCDSBridge::OnTimer(int Counter)
 
 	sio::message::ptr response = sio::object_message::create();
 
-	EuroScopePlugIn::CController controller = bridgeInstance->ControllerSelectFirst();
-	while (controller.IsValid())
-	{
-		std::string controllerId = controller.GetPositionId();
-		std::string controllerCallsign = controller.GetCallsign();
-		double controllerFrequency = controller.GetPrimaryFrequency();
+	//EuroScopePlugIn::CController controller = bridgeInstance->ControllerSelectFirst();
+	//while (controller.IsValid())
+	//{
+	//	std::string controllerId = controller.GetPositionId();
+	//	std::string controllerCallsign = controller.GetCallsign();
+	//	double controllerFrequency = controller.GetPrimaryFrequency();
 
-		response->get_map()[controllerId] = sio::object_message::create();
-		response->get_map()[controllerId]->get_map()["callsign"] = sio::string_message::create(controllerCallsign);
-		response->get_map()[controllerId]->get_map()["frequency"] = sio::double_message::create(controllerFrequency);
+	//	response->get_map()[controllerId] = sio::object_message::create();
+	//	response->get_map()[controllerId]->get_map()["callsign"] = sio::string_message::create(controllerCallsign);
+	//	response->get_map()[controllerId]->get_map()["frequency"] = sio::double_message::create(controllerFrequency);
 
-		controller = bridgeInstance->ControllerSelectNext(controller);
-	}
+	//	controller = bridgeInstance->ControllerSelectNext(controller);
+	//}
 
-	bridgeInstance->GetSocket()->emit("SEND_CTRLR_DATA", response);
-	bridgeInstance->GetSocket()->emit("Complete");
+	//bridgeInstance->GetSocket()->emit("SEND_CTRLR_DATA", response);
+}
+
+void CEXCDSBridge::OnFlightPlanControllerAssignedDataUpdate(EuroScopePlugIn::CFlightPlan fp, int Datatype)
+{
+	sio::message::ptr response = sio::object_message::create();
+	CEXCDSBridge* bridgeInstance = CEXCDSBridge::GetInstance();
+	MessageHandler::PrepareFlightPlanDataResponse(fp, response);
+
+	bridgeInstance->GetSocket()->emit("SEND_FP_DATA", response);
+}
+
+void CEXCDSBridge::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan fp)
+{
+	sio::message::ptr response = sio::object_message::create();
+	CEXCDSBridge* bridgeInstance = CEXCDSBridge::GetInstance();
+	MessageHandler::PrepareFlightPlanDataResponse(fp, response);
+
+	bridgeInstance->GetSocket()->emit("SEND_FP_DATA", response);
 }
 
 void CEXCDSBridge::OnRadarTargetPositionUpdate(EuroScopePlugIn::CRadarTarget rt)

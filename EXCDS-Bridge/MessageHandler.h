@@ -6,6 +6,7 @@ class MessageHandler
 public:
 	void UpdateAltitude(sio::event&);
 	void UpdateScratchPad(sio::event&);
+	void UpdateRoute(sio::event& e);
 	void UpdateSpeed(sio::event&);
 	void UpdateRunway(sio::event&);
 	void UpdateSitu(sio::event&);
@@ -16,6 +17,8 @@ public:
 	void UpdateTrackingStatus(sio::event&);
 	void UpdateEstimate(sio::event&);
 	void UpdateDirectTo(sio::event&);
+	void UpdateTime(sio::event& e);
+	void HandleNewFlightPlan(sio::event& e);
 
 	void RequestAllAircraft(sio::event&);
 	void RequestAircraftByCallsign(sio::event&);
