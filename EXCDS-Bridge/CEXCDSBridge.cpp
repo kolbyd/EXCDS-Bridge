@@ -6,6 +6,7 @@
 #include "stdio.h"
 #include "MessageHandler.h"
 #include "CEXCDSBridge.h"
+#include "BaseMessage.h"
 
 #define PLUGIN_NAME		"EXCDS Bridge"
 #define PLUGIN_VERSION	"0.0.5-alpha"
@@ -68,11 +69,6 @@ void CEXCDSBridge::bind_events()
 	socketClient.socket()->on("UPDATE_ROUTE", std::bind(&MessageHandler::UpdateRoute, &messageHandler, std::placeholders::_1));
 	socketClient.socket()->on("NEW_FLIGHT_PLAN", std::bind(&MessageHandler::HandleNewFlightPlan, &messageHandler, std::placeholders::_1));
 
-	// Interacts with SITU
-	socketClient.socket()->on("REQUEST_RELEASE", std::bind(&MessageHandler::UpdateSitu, &messageHandler, std::placeholders::_1));
-	socketClient.socket()->on("GRANT_RELEASE", std::bind(&MessageHandler::UpdateSitu, &messageHandler, std::placeholders::_1));
-	//socketClient.socket()->on("TRIGGER_MISSED_APPROACH", std::bind(&MessageHandler::UpdateMissedApproach, &messageHandler, std::placeholders::_1));
-
 	// EXCDS information requests
 	socketClient.socket()->on("REQUEST_ALL_FP_DATA", std::bind(&MessageHandler::RequestAllAircraft, &messageHandler, std::placeholders::_1));
 	socketClient.socket()->on("REQUEST_FP_DATA_CALLSIGN", std::bind(&MessageHandler::RequestAircraftByCallsign, &messageHandler, std::placeholders::_1));
@@ -86,16 +82,30 @@ void CEXCDSBridge::OnTimer(int counter)
 
 	EuroScopePlugIn::CFlightPlan flightPlan = bridgeInstance->FlightPlanSelectFirst();
 
-	while (flightPlan.IsValid()) {
-		sio::message::ptr response = sio::object_message::create();
-		MessageHandler::PrepareFlightPlanDataResponse(flightPlan, response);
 
-		bridgeInstance->GetSocket()->emit("SEND_FP_DATA", response);
+	// @see https://github.com/socketio/socket.io-client-cpp/issues/263
+	// Iterate over all the flight plans ES has
+	sio::message::ptr arrayMessage = sio::array_message::create();
+
+	while (flightPlan.IsValid()) {
+		// If the FP is in an FLIGHT_PLAN_STATE_NON_CONCERNED or FLIGHT_PLAN_STATE_NOTIFIED state, we don't need this data
+		if (flightPlan.GetState() < 1)
+		{
+			flightPlan = bridgeInstance->FlightPlanSelectNext(flightPlan);
+			continue;
+		}
+
+		// Create a new object message and store it
+		sio::message::ptr msg = sio::object_message::create();
+		MessageHandler::PrepareFlightPlanDataResponse(flightPlan, msg);
+
+		arrayMessage->get_vector().push_back(msg);
 
 		flightPlan = bridgeInstance->FlightPlanSelectNext(flightPlan);
 	}
 
-	sio::message::ptr response = sio::object_message::create();
+	// Send
+	bridgeInstance->GetSocket()->emit("MASS_SEND_FP_DATA", arrayMessage);
 
 	//EuroScopePlugIn::CController controller = bridgeInstance->ControllerSelectFirst();
 	//while (controller.IsValid())
