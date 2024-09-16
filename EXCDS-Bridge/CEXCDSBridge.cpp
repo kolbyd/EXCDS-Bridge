@@ -6,7 +6,10 @@
 #include "stdio.h"
 #include "MessageHandler.h"
 #include "CEXCDSBridge.h"
-#include "BaseMessage.h"
+
+// Events
+#include "Events/AltitudeUpdateEvent.h"
+#include "Events/ScratchpadUpdateEvent.h"
 
 #define PLUGIN_NAME		"EXCDS Bridge"
 #define PLUGIN_VERSION	"0.0.5-alpha"
@@ -58,14 +61,15 @@ void CEXCDSBridge::bind_events()
 	MessageHandler messageHandler;
 
 	// Messages FROM EXCDS, to update aircraft in EuroScope
+	(new AltitudeUpdateEvent())->RegisterEvent("UPDATE_ALTITUDE");
+	(new ScratchpadUpdateEvent())->RegisterEvent("UPDATE_SCRATCHPAD");
+
 	socketClient.socket()->on("UPDATE_TIME", std::bind(&MessageHandler::UpdateTime, &messageHandler, std::placeholders::_1));
-	socketClient.socket()->on("UPDATE_ALTITUDE", std::bind(&MessageHandler::UpdateAltitude, &messageHandler, std::placeholders::_1));
 	socketClient.socket()->on("UPDATE_SPEED", std::bind(&MessageHandler::UpdateSpeed, &messageHandler, std::placeholders::_1));
 	socketClient.socket()->on("UPDATE_STATUS", std::bind(&MessageHandler::UpdateAircraftStatus, &messageHandler, std::placeholders::_1));
 	socketClient.socket()->on("UPDATE_TRACKING_STATUS", std::bind(&MessageHandler::UpdateTrackingStatus, &messageHandler, std::placeholders::_1));
 	socketClient.socket()->on("UPDATE_DIRECT", std::bind(&MessageHandler::UpdateDirectTo, &messageHandler, std::placeholders::_1));
 	socketClient.socket()->on("UPDATE_FLIGHT_PLAN", std::bind(&MessageHandler::UpdateFlightPlan, &messageHandler, std::placeholders::_1));
-	socketClient.socket()->on("UPDATE_SCRATCHPAD", std::bind(&MessageHandler::UpdateScratchPad, &messageHandler, std::placeholders::_1));
 	socketClient.socket()->on("UPDATE_ROUTE", std::bind(&MessageHandler::UpdateRoute, &messageHandler, std::placeholders::_1));
 	socketClient.socket()->on("NEW_FLIGHT_PLAN", std::bind(&MessageHandler::HandleNewFlightPlan, &messageHandler, std::placeholders::_1));
 
@@ -162,9 +166,8 @@ void CEXCDSBridge::OnFlightPlanDisconnect(EuroScopePlugIn::CFlightPlan FlightPla
 /**
 * Helper methods
 */
-void CEXCDSBridge::SendEuroscopeMessage(const char* callsign, char* message, char* id)
+void CEXCDSBridge::SendEuroscopeMessage(const char* callsign, const char* message, const char* id)
 {
-
 	std::string output = std::string(message) + " (ID: " + std::string(id) + ")";
 
 	GetInstance()->DisplayUserMessage(
@@ -177,6 +180,13 @@ void CEXCDSBridge::SendEuroscopeMessage(const char* callsign, char* message, cha
 		false,
 		false
 	);
+}
+
+void CEXCDSBridge::SendEuroscopeMessage(const char* callsign, ExcdsResponseType type)
+{
+	ExcdsResponse response(type);
+
+	SendEuroscopeMessage(callsign, response.GetMessage().c_str(), response.GetCode().c_str());
 }
 
 CEXCDSBridge* CEXCDSBridge::GetInstance()

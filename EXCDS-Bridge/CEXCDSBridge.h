@@ -2,12 +2,15 @@
 #include "sio_client.h"
 #include "EuroScopePlugIn.h"
 
+#include "Response/ExcdsResponse.h"
+
 class CEXCDSBridge : public EuroScopePlugIn::CPlugIn
 {
 public:
     static CEXCDSBridge* GetInstance();
     static sio::socket::ptr GetSocket();
-    static void SendEuroscopeMessage(const char* callsign, char* message, char* id);
+    static void SendEuroscopeMessage(const char* callsign, const char* message, const char* id);
+    static void CEXCDSBridge::SendEuroscopeMessage(const char*, ExcdsResponseType);
 
     CEXCDSBridge();
     virtual ~CEXCDSBridge();
