@@ -36,3 +36,4 @@ std::string ApiHelper::ToASCII(const std::string& input) {
     }
     return asciiString;
 }
+

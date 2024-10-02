@@ -67,11 +67,15 @@ void CEXCDSBridge::bind_events()
 	socketClient.socket()->on("UPDATE_FLIGHT_PLAN", std::bind(&MessageHandler::UpdateFlightPlan, &messageHandler, std::placeholders::_1));
 	socketClient.socket()->on("UPDATE_SCRATCHPAD", std::bind(&MessageHandler::UpdateScratchPad, &messageHandler, std::placeholders::_1));
 	socketClient.socket()->on("UPDATE_ROUTE", std::bind(&MessageHandler::UpdateRoute, &messageHandler, std::placeholders::_1));
+	socketClient.socket()->on("UPDATE_SQUAWK", std::bind(&MessageHandler::UpdateSquawk, &messageHandler, std::placeholders::_1));
 	socketClient.socket()->on("NEW_FLIGHT_PLAN", std::bind(&MessageHandler::HandleNewFlightPlan, &messageHandler, std::placeholders::_1));
+	socketClient.socket()->on("UPDATE_POSITIONS", std::bind(&MessageHandler::UpdatePositions, &messageHandler, std::placeholders::_1));
+	socketClient.socket()->on("SEND_PDC", std::bind(&MessageHandler::SendPDC, &messageHandler, std::placeholders::_1));
 
 	// EXCDS information requests
 	socketClient.socket()->on("REQUEST_ALL_FP_DATA", std::bind(&MessageHandler::RequestAllAircraft, &messageHandler, std::placeholders::_1));
 	socketClient.socket()->on("REQUEST_FP_DATA_CALLSIGN", std::bind(&MessageHandler::RequestAircraftByCallsign, &messageHandler, std::placeholders::_1));
+	socketClient.socket()->on("REQUEST_ROUTE_DATA", std::bind(&MessageHandler::PrepareRouteDataResponse, &messageHandler, std::placeholders::_1));
 }
 
 void CEXCDSBridge::OnTimer(int counter)
@@ -81,7 +85,6 @@ void CEXCDSBridge::OnTimer(int counter)
 	CEXCDSBridge* bridgeInstance = CEXCDSBridge::GetInstance();
 
 	EuroScopePlugIn::CFlightPlan flightPlan = bridgeInstance->FlightPlanSelectFirst();
-
 
 	// @see https://github.com/socketio/socket.io-client-cpp/issues/263
 	// Iterate over all the flight plans ES has
@@ -122,6 +125,22 @@ void CEXCDSBridge::OnTimer(int counter)
 	//}
 
 	//bridgeInstance->GetSocket()->emit("SEND_CTRLR_DATA", response);
+}
+
+void CEXCDSBridge::OnControllerPositionUpdate(EuroScopePlugIn::CController controller)
+{
+	sio::message::ptr response = sio::object_message::create();
+	MessageHandler::RequestAirports(response);
+
+	CEXCDSBridge* bridgeInstance = CEXCDSBridge::GetInstance();
+}
+
+void CEXCDSBridge::OnControllerDisconnect(EuroScopePlugIn::CController controller)
+{
+	sio::message::ptr response = sio::object_message::create();
+	MessageHandler::RequestAirports(response);
+
+	CEXCDSBridge* bridgeInstance = CEXCDSBridge::GetInstance();
 }
 
 void CEXCDSBridge::OnFlightPlanControllerAssignedDataUpdate(EuroScopePlugIn::CFlightPlan fp, int Datatype)

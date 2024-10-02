@@ -6,6 +6,9 @@ class MessageHandler
 public:
 	void UpdateAltitude(sio::event&);
 	void UpdatePositions(sio::event& e);
+	void SendKeyboardPresses(std::vector<WORD> message);
+	void SendKeyboardString(const std::string str);
+	void SendPDC(sio::event& e);
 	void UpdateScratchPad(sio::event&);
 	void UpdateRoute(sio::event& e);
 	void UpdateSpeed(sio::event&);
@@ -18,10 +21,13 @@ public:
 	void UpdateTime(sio::event& e);
 	void HandleNewFlightPlan(sio::event& e);
 
+	static void RequestAirports(sio::message::ptr response);
 	void RequestAllAircraft(sio::event&);
 	void RequestAircraftByCallsign(sio::event&);
 	static void PrepareFlightPlanDataResponse(EuroScopePlugIn::CFlightPlan fp, sio::message::ptr response);
 	static void PrepareRadarTargetResponse(EuroScopePlugIn::CRadarTarget rt, sio::message::ptr response);
+	void PrepareRouteDataResponse(sio::event& e);
+	void PrepareCDMResponse(EuroScopePlugIn::CFlightPlan fp, sio::message::ptr response);
 	void RequestDirectTo(sio::event&);
 
 private:
