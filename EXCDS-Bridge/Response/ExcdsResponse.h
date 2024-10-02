@@ -30,7 +30,7 @@ public:
     ExcdsResponse(ExcdsResponseType t): _responseType(t) {};
 
     std::string GetCode();
-    std::string GetMessage();
+    std::string GetExcdsMessage();
 private:
     ExcdsResponseType _responseType;
 };
