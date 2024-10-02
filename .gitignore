@@ -444,7 +444,8 @@ FodyWeavers.xsd
 # End of https://www.toptal.com/developers/gitignore/api/c++,vcpkg,visualstudio
 
 # Specific to this project
-EXCDSBridge/SectorFileProviderDescriptor.txt
-EXCDSBridge/euroscope_sector_providers.txt
-EXCDSBridge/version.txt
-EXCDSBridge/situWx/*
+SectorFileProviderDescriptor.txt
+euroscope_sector_providers.txt
+version.txt
+situWx/*
+.sentry-native/*
