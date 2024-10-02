@@ -19,7 +19,7 @@ std::string ExcdsResponse::GetCode()
     }
 }
 
-std::string ExcdsResponse::GetMessage()
+std::string ExcdsResponse::GetExcdsMessage()
 {
     switch (_responseType)
     {

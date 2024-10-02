@@ -198,7 +198,11 @@
     <ClCompile Include="EXCDS-Bridge.cpp" />
     <ClCompile Include="EXCDS-Bridge\ApiHelper.cpp" />
     <ClCompile Include="EXCDS-Bridge\CEXCDSBridge.cpp" />
+    <ClCompile Include="EXCDS-Bridge\Events\AltitudeUpdateEvent.cpp" />
+    <ClCompile Include="EXCDS-Bridge\Events\ExcdsEvent.cpp" />
+    <ClCompile Include="EXCDS-Bridge\Events\ScratchpadUpdateEvent.cpp" />
     <ClCompile Include="EXCDS-Bridge\MessageHandler.cpp" />
+    <ClCompile Include="EXCDS-Bridge\Response\ExcdsResponse.cpp" />
     <ClCompile Include="socket.io-client-cpp\src\internal\sio_client_impl.cpp" />
     <ClCompile Include="socket.io-client-cpp\src\internal\sio_packet.cpp" />
     <ClCompile Include="socket.io-client-cpp\src\sio_client.cpp" />
@@ -213,7 +217,11 @@
     <ClInclude Include="EXCDS-Bridge.h" />
     <ClInclude Include="EXCDS-Bridge\ApiHelper.h" />
     <ClInclude Include="EXCDS-Bridge\CEXCDSBridge.h" />
+    <ClInclude Include="EXCDS-Bridge\Events\AltitudeUpdateEvent.h" />
+    <ClInclude Include="EXCDS-Bridge\Events\ExcdsEvent.h" />
+    <ClInclude Include="EXCDS-Bridge\Events\ScratchpadUpdateEvent.h" />
     <ClInclude Include="EXCDS-Bridge\MessageHandler.h" />
+    <ClInclude Include="EXCDS-Bridge\Response\ExcdsResponse.h" />
     <ClInclude Include="framework.h" />
     <ClInclude Include="Resource.h" />
     <ClInclude Include="socket.io-client-cpp\src\internal\sio_client_impl.h" />

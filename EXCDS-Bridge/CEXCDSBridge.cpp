@@ -205,7 +205,7 @@ void CEXCDSBridge::SendEuroscopeMessage(const char* callsign, ExcdsResponseType 
 {
 	ExcdsResponse response(type);
 
-	SendEuroscopeMessage(callsign, response.GetMessage().c_str(), response.GetCode().c_str());
+	SendEuroscopeMessage(callsign, response.GetExcdsMessage().c_str(), response.GetCode().c_str());
 }
 
 CEXCDSBridge* CEXCDSBridge::GetInstance()
