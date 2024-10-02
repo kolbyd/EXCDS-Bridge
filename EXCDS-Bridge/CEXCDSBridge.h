@@ -20,6 +20,8 @@ public:
     void OnFlightPlanControllerAssignedDataUpdate(EuroScopePlugIn::CFlightPlan FlightPlan, int DataType);
     void OnFlightPlanDisconnect(EuroScopePlugIn::CFlightPlan FlightPlan);
     void OnTimer(int Counter);
+    void OnControllerPositionUpdate(EuroScopePlugIn::CController controller);
+    void OnControllerDisconnect(EuroScopePlugIn::CController controller);
     void OnRadarTargetPositionUpdate(EuroScopePlugIn::CRadarTarget rt);
 private:
     void bind_events();

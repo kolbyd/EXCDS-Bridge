@@ -5,6 +5,7 @@
 #include <regex>
 #include <time.h>
 #include <vector>
+#include <Windows.h>
 
 #include "ApiHelper.h"
 #include "EuroScopePlugIn.h"
@@ -24,22 +25,121 @@ using namespace sio;
 
 typedef std::tuple < std::string, EuroScopePlugIn::CPosition> EstimatePosn;
 std::vector <EstimatePosn> estimates;
+std::string pdcCallsign = "";
 
 #pragma region Update_Methods
 
 void MessageHandler::UpdatePositions(sio::event& e)
 {
-	typedef std::tuple <std::string, std::string, std::string> pos;
-	std::string positions = e.get_message()->get_map()["positions"]->get_string();
+	try {
+		typedef std::tuple <std::string, std::string, std::string> pos;
+		// Send the positions as a JSON formatted tuple array | 0 is name, 1 is lat, 2 is lon
+		std::vector<message::ptr> positions = e.get_message()->get_map()["positions"]->get_vector();
 
-	/*estimates.clear();
+		estimates.clear();
 
-	for (int i = 0; i < positions.size(); i++)
+		// Loop through the positions and update them
+		for (message::ptr position : positions) {
+			std::string name = position->get_map()["name"]->get_string();
+			std::string lat = position->get_map()["lat"]->get_string();
+			std::string lon = position->get_map()["lon"]->get_string();
+
+			OutputDebugString(name.c_str());
+			OutputDebugString(" | ");
+			OutputDebugString(lat.c_str());
+			OutputDebugString(" | ");
+			OutputDebugString(lon.c_str());
+			OutputDebugString("\n");
+
+			EuroScopePlugIn::CPosition pos;
+			pos.LoadFromStrings(lon.c_str(), lat.c_str());
+			estimates.push_back(std::make_tuple(name, pos));
+		}
+	}
+	catch (...) {
+		OutputDebugString("Failed to update positions.");
+	}
+}
+
+std::vector<HWND> GetWindowsByTitle(const char* title)
+{
+	std::vector<HWND> windows;
+	HWND hwnd = FindWindow(NULL, title);
+	while (hwnd != NULL)
 	{
-		EuroScopePlugIn::CPosition pos;
-		pos.LoadFromStrings(std::get<2>(positions[i]).c_str(), std::get<1>(positions[i]).c_str());
-		estimates.push_back(std::make_tuple(std::get<0>(positions[i]), pos));
-	}*/
+		windows.push_back(hwnd);
+		hwnd = FindWindowEx(NULL, hwnd, NULL, title);
+	}
+	return windows;
+}
+
+DWORD GetProcessIdByHandle(HWND hwnd)
+{
+	DWORD processId;
+	GetWindowThreadProcessId(hwnd, &processId);
+	return processId;
+}
+
+void MessageHandler::SendPDC(sio::event& e)
+{
+	try {
+
+		// Get aircraft data from EXCDS
+		std::string callsign = e.get_message()->get_map()["callsign"]->get_string();
+		std::string value = e.get_message()->get_map()["value"]->get_string();
+
+		// Init Response
+		message::ptr response = object_message::create();
+		response->get_map()["callsign"] = string_message::create(callsign);
+
+		EuroScopePlugIn::CFlightPlan fp = CEXCDSBridge::GetInstance()->FlightPlanSelect(callsign.c_str());
+
+		// Is the flight plan valid?
+		if (!FlightPlanChecks(fp, response, e)) {
+			return;
+		}
+
+		bool isAssigned = false;
+
+		// Replace "EuroScope" with the actual window title of the EuroScope instance
+		const char* windowTitle = "EuroScope v3.2.9";
+
+		// Get the process ID of the current module (plugin DLL)
+		HMODULE hModule = GetModuleHandle(NULL);
+		DWORD currentProcessId = GetCurrentProcessId();
+
+		// Get all windows with the specified title
+		std::vector<HWND> euroScopeWindows = GetWindowsByTitle(windowTitle);
+
+		for (HWND hwnd : euroScopeWindows)
+		{
+			DWORD windowProcessId = GetProcessIdByHandle(hwnd);
+			if (windowProcessId == currentProcessId)
+			{
+				if (strcmp(fp.GetCallsign(), pdcCallsign.c_str()) == 0)
+					return;
+
+				pdcCallsign = fp.GetCallsign();
+
+				SetForegroundWindow(hwnd);
+				std::string pdcTarget = fp.GetCallsign();
+				pdcTarget = ".chat " + pdcTarget;
+				MessageHandler::SendKeyboardString(pdcTarget);
+				MessageHandler::SendKeyboardPresses({ 0x1c });
+				MessageHandler::SendKeyboardString(value);
+
+				CEXCDSBridge::SendEuroscopeMessage(callsign.c_str(), "PDC sent.", "PDC_SENT");
+				return;
+			}
+		}
+
+		// Tell EXCDS the change is done
+		response->get_map()["modified"] = bool_message::create(true);
+		e.put_ack_message(response);
+	}
+	catch (...) {
+		CEXCDSBridge::SendEuroscopeMessage("PDC WARNING", "Failed to send", "UNKNOWN");
+	}
 }
 
 void MessageHandler::UpdateScratchPad(sio::event& e)
@@ -144,12 +244,12 @@ void MessageHandler::UpdateAltitude(sio::event& e)
 		}
 		if (cleared != -1)
 			fp.GetControllerAssignedData().SetClearedAltitude(cleared);
-		/*
+		
 		if (final != -1) {
 			fp.GetFlightPlanData().SetFinalAltitude(final);
 			fp.GetControllerAssignedData().SetFinalAltitude(final);
 		}
-		*/
+		
 		if (coordinated != -1)
 			fp.InitiateCoordination(fp.GetCoordinatedNextController(), fp.GetNextCopxPointName(), coordinated);
 		if (reported != "")
@@ -408,6 +508,8 @@ void MessageHandler::UpdateSquawk(sio::event& e)
 
 		std::string newCode = SquawkGenerator(prefix);
 
+		OutputDebugString(newCode.c_str());
+
 		isAssigned = fp.GetControllerAssignedData().SetSquawk(newCode.c_str());
 
 		if (!isAssigned) {
@@ -494,10 +596,9 @@ void MessageHandler::UpdateTime(sio::event& e)
 		return;
 	}
 
-	bool isAssigned = fp.GetFlightPlanData().SetActualDepartureTime(time.c_str());
 	fp.GetControllerAssignedData().SetScratchPadString("DEPA");
-	fp.StartTracking();
-	fp.GetControllerAssignedData().SetScratchPadString("CLEA");
+	bool isAssigned = fp.GetFlightPlanData().SetActualDepartureTime(time.c_str());
+	fp.GetControllerAssignedData().SetScratchPadString("");
 
 	if (!isAssigned) {
 		e.put_ack_message(NotModified(response, "Unknown reason."));
@@ -577,6 +678,37 @@ void MessageHandler::HandleNewFlightPlan(sio::event& e)
 */
 
 #pragma region Request_Methods
+
+void MessageHandler::RequestAirports(message::ptr response)
+{
+	CEXCDSBridge* bridgeInstance = CEXCDSBridge::GetInstance();
+
+	// Get a list of controllers
+	EuroScopePlugIn::CController controller = bridgeInstance->ControllerSelectFirst();
+	sio::message::ptr controllers = sio::array_message::create();
+
+	while (controller.IsValid())
+	{
+		controllers->get_vector().push_back(string_message::create(controller.GetCallsign()));
+
+		controller = bridgeInstance->ControllerSelectNext(controller);
+	}
+
+	// Get which airports are active
+	EuroScopePlugIn::CSectorElement airport = bridgeInstance->SectorFileElementSelectFirst(EuroScopePlugIn::SECTOR_ELEMENT_AIRPORT);
+	sio::message::ptr airports = sio::array_message::create();
+
+	while (airport.IsValid())
+	{
+		// Check if the element is used as a departure (true) or arrival (false)
+		if (airport.IsElementActive(true) || airport.IsElementActive(false))
+		{
+			airports->get_vector().push_back(string_message::create(airport.GetAirportName()));
+		}
+
+		airport = bridgeInstance->SectorFileElementSelectNext(airport, EuroScopePlugIn::SECTOR_ELEMENT_AIRPORT);
+	}
+}
 
 void MessageHandler::RequestAllAircraft(sio::event& e)
 {
@@ -989,12 +1121,95 @@ void MessageHandler::PrepareRadarTargetResponse(EuroScopePlugIn::CRadarTarget rt
 	response->get_map()["id"] = string_message::create(rt.GetSystemID());
 }
 
+void MessageHandler::PrepareRouteDataResponse(sio::event& e)
+{
+	// Gate data from EXCDS
+	std::string callsign = e.get_message()->get_map()["callsign"]->get_string();
+
+	// Init Response
+	message::ptr response = object_message::create();
+	response->get_map()["callsign"] = string_message::create(callsign);
+
+	CEXCDSBridge* bridgeInstance = CEXCDSBridge::GetInstance();
+
+	EuroScopePlugIn::CFlightPlan fp = bridgeInstance->FlightPlanSelect(callsign.c_str());
+
+	// Is the flight plan valid?
+	if (!fp.IsValid()) {
+		return;
+	}
+
+	sio::message::ptr arrayMessage = sio::array_message::create();
+
+	int directTo = fp.GetExtractedRoute().GetPointsAssignedIndex();
+	int closestTo = fp.GetExtractedRoute().GetPointsCalculatedIndex();
+	int highest = 0;
+	if (directTo > closestTo)
+		highest = directTo;
+	else
+		highest = closestTo;
+
+	for (int i = highest; i < fp.GetExtractedRoute().GetPointsNumber(); i++) {
+		double lat = fp.GetExtractedRoute().GetPointPosition(i).m_Latitude;
+		double lon = fp.GetExtractedRoute().GetPointPosition(i).m_Longitude;
+
+		sio::message::ptr msg = sio::object_message::create();
+		msg->get_map()["point"] = string_message::create(fp.GetExtractedRoute().GetPointName(i));
+		msg->get_map()["lat"] = double_message::create(lat);
+		msg->get_map()["long"] = double_message::create(lon);
+
+		arrayMessage->get_vector().push_back(msg);
+
+		if (fp.GetExtractedRoute().GetPointDistanceInMinutes(i) > fp.GetSectorExitMinutes())
+			break;
+	}
+
+	double lat = 0;
+	double lon = 0;
+
+	if (fp.GetCorrelatedRadarTarget().IsValid())
+	{
+		lat = fp.GetCorrelatedRadarTarget().GetPosition().GetPosition().m_Latitude;
+		lon = fp.GetCorrelatedRadarTarget().GetPosition().GetPosition().m_Longitude;
+	 }
+	else if (fp.GetFPTrackPosition().IsValid())
+	{
+		lat = fp.GetFPTrackPosition().GetPosition().m_Latitude;
+		lon = fp.GetFPTrackPosition().GetPosition().m_Longitude;
+	}
+
+	response->get_map()["lat"] = double_message::create(lat);
+	response->get_map()["long"] = double_message::create(lon);
+
+	response->get_map()["route"] = arrayMessage;
+	bridgeInstance->GetSocket()->emit("ROUTE_DATA", response);
+}
+
+void MessageHandler::PrepareCDMResponse(EuroScopePlugIn::CFlightPlan fp, message::ptr response)
+{
+	if (!fp.IsValid()) return;
+
+	if (strcmp(fp.GetFlightPlanData().GetOrigin(), "CYYZ") != 0 || strcmp(fp.GetFlightPlanData().GetDestination(), "CYYZ") != 0) return;
+
+	std::string callsign = fp.GetCallsign();
+	response->get_map()["callsign"] = string_message::create(callsign);
+
+	response->get_map()["etd"] = string_message::create(fp.GetFlightPlanData().GetEstimatedDepartureTime());
+	response->get_map()["remarks"] = string_message::create(fp.GetFlightPlanData().GetRemarks());
+	response->get_map()["ete"] = int_message::create(fp.GetPositionPredictions().GetPointsNumber());
+	response->get_map()["hours"] = string_message::create(fp.GetFlightPlanData().GetEnrouteHours());
+	response->get_map()["minutes"] = string_message::create(fp.GetFlightPlanData().GetEnrouteMinutes());
+	response->get_map()["flight_plan_state"] = int_message::create(fp.GetFPState());
+}
+
 void MessageHandler::PrepareFlightPlanDataResponse(EuroScopePlugIn::CFlightPlan fp, message::ptr response)
 {
 	if (!fp.IsValid()) {
 		CEXCDSBridge::SendEuroscopeMessage(fp.GetCallsign(), "Error: Flight plan not valid", "FP INVALID");
 		return;
 	}
+
+	pdcCallsign = "";
 
 	char buf[100];
 	struct tm newTime;
@@ -1194,11 +1409,15 @@ void MessageHandler::PrepareFlightPlanDataResponse(EuroScopePlugIn::CFlightPlan 
 	std::string nextController = fp.GetCoordinatedNextController();
 	if (nextController.empty()) nextController = "";
 
+	int fpstate = fp.GetState();
+	if (fpstate == 2 && fp.GetSectorEntryMinutes() > 5)
+		fpstate = 1;
+
 	response->get_map()["controllerData"] = object_message::create();
 	response->get_map()["controllerData"]->get_map()["heading"] = int_message::create(fp.GetControllerAssignedData().GetAssignedHeading());
 	response->get_map()["controllerData"]->get_map()["ground_status"] = string_message::create(excdsGroundStatus);
 	response->get_map()["controllerData"]->get_map()["scratchpad"] = string_message::create(fp.GetControllerAssignedData().GetScratchPadString());
-	response->get_map()["controllerData"]->get_map()["controller_tracking_state"] = int_message::create(fp.GetState());
+	response->get_map()["controllerData"]->get_map()["controller_tracking_state"] = int_message::create(fpstate);
 	response->get_map()["controllerData"]->get_map()["special_status"] = string_message::create(excdsStatus);
 	response->get_map()["controllerData"]->get_map()["fp_tracking_state"] = int_message::create(fp.GetFPState());
 	response->get_map()["controllerData"]->get_map()["squawk"] = string_message::create(fp.GetControllerAssignedData().GetSquawk());
@@ -1208,6 +1427,7 @@ void MessageHandler::PrepareFlightPlanDataResponse(EuroScopePlugIn::CFlightPlan 
 	response->get_map()["fpdata"] = object_message::create();
 	response->get_map()["fpdata"]->get_map()["alerting"] = bool_message::create(fp.GetClearenceFlag());
 	response->get_map()["fpdata"]->get_map()["ifr"] = bool_message::create(strcmp(fp.GetFlightPlanData().GetPlanType(), "I") == 0);
+	response->get_map()["fpdata"]->get_map()["remarks"] = string_message::create(ApiHelper::ToASCII(fp.GetFlightPlanData().GetRemarks()));
 
 	// Route Information
 	CEXCDSBridge* bridgeInstance = CEXCDSBridge::GetInstance();
@@ -1229,7 +1449,7 @@ void MessageHandler::PrepareFlightPlanDataResponse(EuroScopePlugIn::CFlightPlan 
 
 	std::string route = fp.GetFlightPlanData().GetRoute();
 
-
+	std::string first = fp.GetExtractedRoute().GetPointName(1);
 
 	response->get_map()["route"] = object_message::create();
 	response->get_map()["route"]->get_map()["departure"] = object_message::create();
@@ -1238,11 +1458,15 @@ void MessageHandler::PrepareFlightPlanDataResponse(EuroScopePlugIn::CFlightPlan 
 	response->get_map()["route"]->get_map()["departure"]->get_map()["code"] = string_message::create(dep);
 	response->get_map()["route"]->get_map()["departure"]->get_map()["rwy"] = string_message::create(depRwy);
 	response->get_map()["route"]->get_map()["departure"]->get_map()["procedure"] = string_message::create(ApiHelper::ToASCII(sid));
+	response->get_map()["route"]->get_map()["departure"]->get_map()["distance"] = double_message::create(fp.GetDistanceFromOrigin());
 	response->get_map()["route"]->get_map()["destination"]->get_map()["code"] = string_message::create(dest);
 	response->get_map()["route"]->get_map()["destination"]->get_map()["rwy"] = string_message::create(arrRwy);
 	response->get_map()["route"]->get_map()["destination"]->get_map()["procedure"] = string_message::create(ApiHelper::ToASCII(star));
+	response->get_map()["route"]->get_map()["destination"]->get_map()["distance"] = double_message::create(fp.GetDistanceToDestination());
 	response->get_map()["route"]->get_map()["eastbound"] = bool_message::create(eastbound);
 	response->get_map()["route"]->get_map()["text"] = string_message::create(ApiHelper::ToASCII(route));
+	response->get_map()["route"]->get_map()["first_fix"] = string_message::create(ApiHelper::ToASCII(first));
+	response->get_map()["route"]->get_map()["track"] = int_message::create(origin.DirectionTo(destination));
 
 	// Speeds
 	std::string speed;
@@ -1269,7 +1493,7 @@ void MessageHandler::PrepareFlightPlanDataResponse(EuroScopePlugIn::CFlightPlan 
 
 	response->get_map()["estimates"] = object_message::create();
 
-	if (fp.GetState() != EuroScopePlugIn::FLIGHT_PLAN_STATE_NON_CONCERNED && fp.GetState() != EuroScopePlugIn::FLIGHT_PLAN_STATE_REDUNDANT)
+	if (fp.GetState() > 1 && fp.GetState() != EuroScopePlugIn::FLIGHT_PLAN_STATE_REDUNDANT)
 	{
 		CEXCDSBridge* bridgeInstance = CEXCDSBridge::GetInstance();
 		EuroScopePlugIn::CPosition origin = fp.GetExtractedRoute().GetPointPosition(0);
@@ -1298,12 +1522,21 @@ void MessageHandler::PrepareFlightPlanDataResponse(EuroScopePlugIn::CFlightPlan 
 
 				double distance = fp.GetPositionPredictions().GetPosition(0).DistanceTo(posn);
 
-				for (int j = 1; j < fp.GetPositionPredictions().GetPointsNumber() && j < 90; j++)
+				int upperBound = fp.GetPositionPredictions().GetPointsNumber();
+				if (fp.GetSectorExitMinutes() < upperBound)
+					upperBound = fp.GetSectorExitMinutes();
+
+				if (upperBound > 120)
+					upperBound = 120;
+
+				for (int j = 1; j < upperBound; j++)
 				{
+					// If we are getting closer to the fix
 					if (distance > fp.GetPositionPredictions().GetPosition(j).DistanceTo(posn))
 					{
 						distance = fp.GetPositionPredictions().GetPosition(j).DistanceTo(posn);
 					}
+					// Do not include if we are further than 200 miles away from the fix
 					else if (j == 1 || fp.GetPositionPredictions().GetPosition(j).DistanceTo(posn) > 200)
 					{
 						break;
@@ -1313,11 +1546,19 @@ void MessageHandler::PrepareFlightPlanDataResponse(EuroScopePlugIn::CFlightPlan 
 						std::string fixName = std::get<0>(fix);
 						response->get_map()["estimates"]->get_map()["enroute"]->get_map()[fixName] = object_message::create();
 						response->get_map()["estimates"]->get_map()["enroute"]->get_map()[fixName]->get_map()["name"] = string_message::create(fixName);
-						response->get_map()["estimates"]->get_map()["enroute"]->get_map()[fixName]->get_map()["ete"] = int_message::create(j);
+						response->get_map()["estimates"]->get_map()["enroute"]->get_map()[fixName]->get_map()["ete"] = int_message::create(j - 1);
 
 						double displacement = sqrt(pow(distance, 2) + pow(fp.GetPositionPredictions().GetPosition(0).DistanceTo(posn), 2));
+						double distanceToAbeam = fp.GetPositionPredictions().GetPosition(j).DistanceTo(fp.GetPositionPredictions().GetPosition(0));
 
-						response->get_map()["estimates"]->get_map()["enroute"]->get_map()[fixName]->get_map()["distance"] = double_message::create(displacement);
+						response->get_map()["estimates"]->get_map()["enroute"]->get_map()[fixName]->get_map()["current_distance"] = double_message::create(displacement);
+						response->get_map()["estimates"]->get_map()["enroute"]->get_map()[fixName]->get_map()["abeam_distance"] = double_message::create(distance);
+						response->get_map()["estimates"]->get_map()["enroute"]->get_map()[fixName]->get_map()["distance_to_abeam"] = double_message::create(distanceToAbeam);
+
+						EuroScopePlugIn::CPosition abeamPoint = fp.GetPositionPredictions().GetPosition(j - 1);
+
+						response->get_map()["estimates"]->get_map()["enroute"]->get_map()[fixName]->get_map()["lat"] = double_message::create(abeamPoint.m_Latitude);
+						response->get_map()["estimates"]->get_map()["enroute"]->get_map()[fixName]->get_map()["lon"] = double_message::create(abeamPoint.m_Longitude);
 
 						if (displacement < closestBayDistance)
 						{
@@ -1720,4 +1961,94 @@ std::string MessageHandler::SquawkGenerator(std::string squawkPrefix)
 	}
 
 	return "1001";
+}
+
+// From VATCANsitu
+void MessageHandler::SendKeyboardPresses(std::vector<WORD> message)
+{
+	std::vector<INPUT> vec;
+	for (auto ch : message)
+	{
+		INPUT input = { 0 };
+		input.type = INPUT_KEYBOARD;
+		input.ki.dwFlags = KEYEVENTF_SCANCODE;
+		input.ki.time = 0;
+		input.ki.wVk = 0;
+		input.ki.wScan = ch;
+		input.ki.dwExtraInfo = 1;
+		vec.push_back(input);
+
+		input.ki.dwFlags |= KEYEVENTF_KEYUP;
+		vec.push_back(input);
+	}
+
+	SendInput(vec.size(), &vec[0], sizeof(INPUT));
+}
+
+// From VATCANsitu
+void MessageHandler::SendKeyboardString(const std::string str) {
+	std::vector<INPUT> vec;
+	const auto key_board_layout = GetKeyboardLayout(0);
+
+	INPUT iCaps = { 0 };
+	iCaps.type = INPUT_KEYBOARD;
+	iCaps.ki.dwFlags = 0;
+	iCaps.ki.time = 0;
+	iCaps.ki.wVk = VK_CAPITAL;
+	iCaps.ki.wScan = MapVirtualKeyExW(VK_SHIFT, MAPVK_VK_TO_VSC, key_board_layout);
+	iCaps.ki.dwExtraInfo = 0;
+	vec.push_back(iCaps);
+
+	iCaps.ki.dwFlags |= KEYEVENTF_KEYUP;
+	vec.push_back(iCaps);
+
+	for (auto ch : str)
+	{
+		INPUT input = { 0 };
+		if (ch == '_') {
+			INPUT inputShift = { 0 };
+			inputShift.type = INPUT_KEYBOARD;
+			inputShift.ki.dwFlags = 0;
+			inputShift.ki.time = 0;
+			inputShift.ki.wVk = VK_SHIFT;
+			inputShift.ki.wScan = MapVirtualKeyExW(VK_SHIFT, MAPVK_VK_TO_VSC, key_board_layout);
+			inputShift.ki.dwExtraInfo = 0;
+			vec.push_back(inputShift);
+
+			input.type = INPUT_KEYBOARD;
+			input.ki.dwFlags = 0;
+			input.ki.time = 0;
+			input.ki.wVk = VK_OEM_MINUS;
+			input.ki.wScan = MapVirtualKeyExW(VK_OEM_MINUS, MAPVK_VK_TO_VSC, key_board_layout);
+			input.ki.dwExtraInfo = 0;
+			vec.push_back(input);
+
+			input.ki.dwFlags |= KEYEVENTF_KEYUP;
+			vec.push_back(input);
+
+			inputShift.ki.dwFlags |= KEYEVENTF_KEYUP;
+			vec.push_back(inputShift);
+		}
+		else {
+
+			input.type = INPUT_KEYBOARD;
+			input.ki.dwFlags = 0;
+			input.ki.time = 0;
+			input.ki.wVk = VkKeyScanExW(ch, key_board_layout);
+			input.ki.wScan = MapVirtualKeyExW(VkKeyScanExW(ch, key_board_layout), MAPVK_VK_TO_VSC, key_board_layout);
+			input.ki.dwExtraInfo = 0;
+			vec.push_back(input);
+
+			input.ki.dwFlags |= KEYEVENTF_KEYUP;
+			vec.push_back(input);
+		}
+	}
+
+	iCaps.ki.dwFlags = 0;
+	vec.push_back(iCaps);
+
+	iCaps.ki.dwFlags |= KEYEVENTF_KEYUP;
+	vec.push_back(iCaps);
+
+	SendInput(vec.size(), vec.data(), sizeof(INPUT));
 }
