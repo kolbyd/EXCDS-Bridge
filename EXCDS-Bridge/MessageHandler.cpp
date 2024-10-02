@@ -13,6 +13,8 @@
 
 #include "MessageHandler.h"
 
+#define ENTER 0x1c
+
 using namespace sio;
 
 /**
@@ -61,23 +63,35 @@ void MessageHandler::UpdatePositions(sio::event& e)
 	}
 }
 
-std::vector<HWND> GetWindowsByTitle(const char* title)
-{
-	std::vector<HWND> windows;
-	HWND hwnd = FindWindow(NULL, title);
-	while (hwnd != NULL)
-	{
-		windows.push_back(hwnd);
-		hwnd = FindWindowEx(NULL, hwnd, NULL, title);
-	}
-	return windows;
+struct handleData {
+    unsigned long process_id;
+    HWND window_handle;
+};
+
+
+BOOL isMainWindow(HWND handle)
+{   
+    return GetWindow(handle, GW_OWNER) == (HWND)0 && IsWindowVisible(handle);
 }
 
-DWORD GetProcessIdByHandle(HWND hwnd)
+BOOL CALLBACK enumWindowsCallback(HWND handle, LPARAM lParam)
 {
-	DWORD processId;
-	GetWindowThreadProcessId(hwnd, &processId);
-	return processId;
+	handleData& data = *(handleData*)lParam;
+    unsigned long process_id = 0;
+    GetWindowThreadProcessId(handle, &process_id);
+    if (data.process_id != process_id || !isMainWindow(handle))
+        return TRUE;
+    data.window_handle = handle;
+    return FALSE;
+}
+
+HWND findMainWindow(unsigned long process_id)
+{
+    handleData data;
+    data.process_id = process_id;
+    data.window_handle = 0;
+    EnumWindows(enumWindowsCallback, (LPARAM)&data);
+    return data.window_handle;
 }
 
 void MessageHandler::SendPDC(sio::event& e)
@@ -90,7 +104,6 @@ void MessageHandler::SendPDC(sio::event& e)
 
 		// Init Response
 		message::ptr response = object_message::create();
-		response->get_map()["callsign"] = string_message::create(callsign);
 
 		EuroScopePlugIn::CFlightPlan fp = CEXCDSBridge::GetInstance()->FlightPlanSelect(callsign.c_str());
 
@@ -101,37 +114,33 @@ void MessageHandler::SendPDC(sio::event& e)
 
 		bool isAssigned = false;
 
-		// Replace "EuroScope" with the actual window title of the EuroScope instance
-		const char* windowTitle = "EuroScope v3.2.9";
+		// Get all windows with the specified title		
+		HWND mainWindow = findMainWindow(GetCurrentProcessId());
 
-		// Get the process ID of the current module (plugin DLL)
-		HMODULE hModule = GetModuleHandle(NULL);
-		DWORD currentProcessId = GetCurrentProcessId();
+		// If the window isn't active, but is visible (not minimized)
+		// - Select the window
+		// - .chat
+		// - Select back
 
-		// Get all windows with the specified title
-		std::vector<HWND> euroScopeWindows = GetWindowsByTitle(windowTitle);
+		// If minimized:
+		// - Move it to a random x,y location (negative)
+		// - Open it
+		// - send the chat
+		// - minimize and put back where it was
 
-		for (HWND hwnd : euroScopeWindows)
-		{
-			DWORD windowProcessId = GetProcessIdByHandle(hwnd);
-			if (windowProcessId == currentProcessId)
-			{
-				if (strcmp(fp.GetCallsign(), pdcCallsign.c_str()) == 0)
-					return;
+		if (strcmp(fp.GetCallsign(), pdcCallsign.c_str()) == 0)
+			return;
 
-				pdcCallsign = fp.GetCallsign();
+		pdcCallsign = fp.GetCallsign();
 
-				SetForegroundWindow(hwnd);
-				std::string pdcTarget = fp.GetCallsign();
-				pdcTarget = ".chat " + pdcTarget;
-				MessageHandler::SendKeyboardString(pdcTarget);
-				MessageHandler::SendKeyboardPresses({ 0x1c });
-				MessageHandler::SendKeyboardString(value);
+		SetForegroundWindow(mainWindow);
+		std::string pdcTarget = fp.GetCallsign();
+		pdcTarget = ".chat " + pdcTarget;
+		MessageHandler::SendKeyboardString(pdcTarget);
+		MessageHandler::SendKeyboardPresses({ ENTER });
+		MessageHandler::SendKeyboardString(value);
 
-				CEXCDSBridge::SendEuroscopeMessage(callsign.c_str(), "PDC sent.", "PDC_SENT");
-				return;
-			}
-		}
+		CEXCDSBridge::SendEuroscopeMessage(callsign.c_str(), "PDC sent.", "PDC_SENT");
 
 		// Tell EXCDS the change is done
 		response->get_map()["modified"] = bool_message::create(true);

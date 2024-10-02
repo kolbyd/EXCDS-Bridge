@@ -39,9 +39,6 @@
     <ClCompile Include="EXCDS-Bridge\MessageHandler.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="EXCDS-Bridge\BaseMessage.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="EXCDS-Bridge.def">
@@ -89,9 +86,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="EXCDS-Bridge\MessageHandler.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="EXCDS-Bridge\BaseMessage.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
