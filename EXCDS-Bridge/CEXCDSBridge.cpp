@@ -65,6 +65,7 @@ void CEXCDSBridge::bind_events()
 	(new ScratchpadUpdateEvent())->RegisterEvent("UPDATE_SCRATCHPAD");
 
 	socketClient.socket()->on("UPDATE_TIME", std::bind(&MessageHandler::UpdateTime, &messageHandler, std::placeholders::_1));
+	socketClient.socket()->on("UPDATE_DEPARTURE_TIME", std::bind(&MessageHandler::UpdateDepartureTime, &messageHandler, std::placeholders::_1));
 	socketClient.socket()->on("UPDATE_SPEED", std::bind(&MessageHandler::UpdateSpeed, &messageHandler, std::placeholders::_1));
 	socketClient.socket()->on("UPDATE_STATUS", std::bind(&MessageHandler::UpdateAircraftStatus, &messageHandler, std::placeholders::_1));
 	socketClient.socket()->on("UPDATE_TRACKING_STATUS", std::bind(&MessageHandler::UpdateTrackingStatus, &messageHandler, std::placeholders::_1));
@@ -114,21 +115,27 @@ void CEXCDSBridge::OnTimer(int counter)
 	// Send
 	bridgeInstance->GetSocket()->emit("MASS_SEND_FP_DATA", arrayMessage);
 
-	//EuroScopePlugIn::CController controller = bridgeInstance->ControllerSelectFirst();
-	//while (controller.IsValid())
-	//{
-	//	std::string controllerId = controller.GetPositionId();
-	//	std::string controllerCallsign = controller.GetCallsign();
-	//	double controllerFrequency = controller.GetPrimaryFrequency();
+	sio::message::ptr controllerMessage = sio::array_message::create();
 
-	//	response->get_map()[controllerId] = sio::object_message::create();
-	//	response->get_map()[controllerId]->get_map()["callsign"] = sio::string_message::create(controllerCallsign);
-	//	response->get_map()[controllerId]->get_map()["frequency"] = sio::double_message::create(controllerFrequency);
+	EuroScopePlugIn::CController controller = bridgeInstance->ControllerSelectFirst();
+	while (controller.IsValid())
+	{
+		std::string controllerId = controller.GetPositionId();
+		std::string controllerCallsign = controller.GetCallsign();
+		double controllerFrequency = controller.GetPrimaryFrequency();
 
-	//	controller = bridgeInstance->ControllerSelectNext(controller);
-	//}
+		sio::message::ptr msg = sio::object_message::create();
 
-	//bridgeInstance->GetSocket()->emit("SEND_CTRLR_DATA", response);
+		msg->get_map()[controllerId] = sio::object_message::create();
+		msg->get_map()[controllerId]->get_map()["callsign"] = sio::string_message::create(controllerCallsign);
+		msg->get_map()[controllerId]->get_map()["frequency"] = sio::double_message::create(controllerFrequency);
+
+		controllerMessage->get_vector().push_back(msg);
+
+		controller = bridgeInstance->ControllerSelectNext(controller);
+	}
+
+	bridgeInstance->GetSocket()->emit("SEND_CTRLR_DATA", controllerMessage);
 }
 
 void CEXCDSBridge::OnControllerPositionUpdate(EuroScopePlugIn::CController controller)

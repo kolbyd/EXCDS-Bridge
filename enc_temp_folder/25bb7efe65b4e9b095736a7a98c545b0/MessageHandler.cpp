@@ -939,9 +939,6 @@ void MessageHandler::PrepareRadarTargetResponse(EuroScopePlugIn::CRadarTarget rt
 	bool cleared = false;
 	std::string groundStatus = "NSTS";
 	std::string nextCjs = "";
-	std::string assignedSquawk = "";
-	std::string etd = "";
-	std::string atd = "";
 
 	if (rt.GetCorrelatedFlightPlan().IsValid())
 	{
@@ -1056,12 +1053,7 @@ void MessageHandler::PrepareRadarTargetResponse(EuroScopePlugIn::CRadarTarget rt
 		cleared = fp.GetClearenceFlag();
 		groundStatus = fp.GetGroundState();
 
-		nextCjs = fp.GetCoordinatedNextController();
-
-		assignedSquawk = fp.GetControllerAssignedData().GetSquawk();
-
-		etd = fp.GetFlightPlanData().GetEstimatedDepartureTime();
-		atd = fp.GetFlightPlanData().GetActualDepartureTime();
+			nextCjs = fp.GetCoordinatedNextController();
 
 		for (int i = 0; i < fp.GetExtractedRoute().GetPointsNumber(); i++) {
 			sio::message::ptr msg = sio::object_message::create();
@@ -1094,14 +1086,10 @@ void MessageHandler::PrepareRadarTargetResponse(EuroScopePlugIn::CRadarTarget rt
 
 	response->get_map()["internal"] = object_message::create();
 	response->get_map()["internal"]->get_map()["reported_gs"] = int_message::create(reportedGs);
-	response->get_map()["internal"]->get_map()["controller_tracking_state"] = int_message::create(trackingState);
+	response->get_map()["internal"]->get_map()["controller_tracking_state"] = int_message::create(reportedGs);
 	response->get_map()["internal"]->get_map()["clearance_flag"] = bool_message::create(cleared);
 	response->get_map()["internal"]->get_map()["ground_status"] = string_message::create(groundStatus);
 	response->get_map()["internal"]->get_map()["next_cjs"] = string_message::create(nextCjs);
-	response->get_map()["internal"]->get_map()["assignedSquawk"] = string_message::create(assignedSquawk);
-	response->get_map()["internal"]->get_map()["eta"] = int_message::create(eta);
-	response->get_map()["internal"]->get_map()["etd"] = string_message::create(etd);
-	response->get_map()["internal"]->get_map()["atd"] = string_message::create(atd);
 
 	response->get_map()["mods"] = object_message::create();
 	response->get_map()["mods"]->get_map()["medevac"] = bool_message::create(!MEDEVAC);

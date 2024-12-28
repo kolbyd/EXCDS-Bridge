@@ -11,6 +11,7 @@ public:
 	void SendPDC(sio::event& e);
 	void UpdateScratchPad(sio::event&);
 	void UpdateRoute(sio::event& e);
+	void UpdateDepartureTime(sio::event& e);
 	void UpdateSpeed(sio::event&);
 	void UpdateFlightPlan(sio::event&);
 	void UpdateAircraftStatus(sio::event&);

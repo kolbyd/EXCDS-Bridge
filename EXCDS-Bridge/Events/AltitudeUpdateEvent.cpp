@@ -19,12 +19,11 @@ void AltitudeUpdateEvent::ExecuteEvent(sio::event& event, EuroScopePlugIn::CFlig
 		if (cleared != -1) {
 			flightPlan.GetControllerAssignedData().SetClearedAltitude(cleared);
 		}
-		/*
+
 		if (final != -1) {
-			fp.GetFlightPlanData().SetFinalAltitude(final);
-			fp.GetControllerAssignedData().SetFinalAltitude(final);
+			flightPlan.GetFlightPlanData().SetFinalAltitude(final);
+			flightPlan.GetControllerAssignedData().SetFinalAltitude(final);
 		}
-		*/
 
 		if (coordinated != -1) {
 			flightPlan.InitiateCoordination(flightPlan.GetCoordinatedNextController(), flightPlan.GetNextCopxPointName(), coordinated);
