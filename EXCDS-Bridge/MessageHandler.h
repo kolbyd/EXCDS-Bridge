@@ -9,6 +9,13 @@ public:
 	void SendKeyboardPresses(std::vector<WORD> message);
 	void SendKeyboardString(const std::string str);
 	void SendPDC(sio::event& e);
+	void HandoffTarget(sio::event& e);
+	void RefuseHandoff(sio::event& e);
+	void AcceptHandoff(sio::event& e);
+	void RefuseCoordination(sio::event& e);
+	void AcceptCoordination(sio::event& e);
+	void CorrelateTarget(sio::event& e);
+	void DecorrelateTarget(sio::event& e);
 	void UpdateScratchPad(sio::event&);
 	void UpdateRoute(sio::event& e);
 	void UpdateDepartureTime(sio::event& e);

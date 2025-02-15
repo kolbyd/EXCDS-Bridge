@@ -23,6 +23,11 @@ public:
     void OnControllerPositionUpdate(EuroScopePlugIn::CController controller);
     void OnControllerDisconnect(EuroScopePlugIn::CController controller);
     void OnRadarTargetPositionUpdate(EuroScopePlugIn::CRadarTarget rt);
+    void OnCompileFrequencyChat(const char* sSenderCallsign,
+        double Frequency,
+        const char* sChatMessage);
+    void OnCompilePrivateChat(const char* sSenderCallsign, const char* sReceiverCallsign, const char* sChatMessage);
+    void CEXCDSBridge::OnPlaneInformationUpdate(const char* sCallsign, const char* sLivery, const char* sPlaneType);
 private:
     void bind_events();
 };
