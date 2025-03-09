@@ -23,6 +23,8 @@ public:
 	void UpdateFlightPlan(sio::event&);
 	void UpdateAircraftStatus(sio::event&);
 	void UpdateTrackingStatus(sio::event&);
+	void PointoutTarget(sio::event& e);
+	void UpdateAnnotation(sio::event& e);
 	void UpdateSquawk(sio::event& e);
 	void UpdateEstimate(sio::event&);
 	void UpdateDirectTo(sio::event&);
@@ -32,6 +34,7 @@ public:
 	static void RequestAirports(sio::message::ptr response);
 	void RequestAllAircraft(sio::event&);
 	void RequestAircraftByCallsign(sio::event&);
+	void PrepareFPTrackResponse(EuroScopePlugIn::CFlightPlan fp, sio::message::ptr response);
 	static void PrepareFlightPlanDataResponse(EuroScopePlugIn::CFlightPlan fp, sio::message::ptr response);
 	static void PrepareRadarTargetResponse(EuroScopePlugIn::CRadarTarget rt, sio::message::ptr response);
 	void PrepareRouteDataResponse(sio::event& e);

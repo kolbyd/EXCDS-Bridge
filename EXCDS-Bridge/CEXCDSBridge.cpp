@@ -77,6 +77,12 @@ void CEXCDSBridge::bind_events()
 	socketClient.socket()->on("UPDATE_POSITIONS", std::bind(&MessageHandler::UpdatePositions, &messageHandler, std::placeholders::_1));
 	socketClient.socket()->on("SEND_PDC", std::bind(&MessageHandler::SendPDC, &messageHandler, std::placeholders::_1));
 	socketClient.socket()->on("HANDOFF_TARGET", std::bind(&MessageHandler::HandoffTarget, &messageHandler, std::placeholders::_1));
+	socketClient.socket()->on("REFUSE_HANDOFF", std::bind(&MessageHandler::RefuseHandoff, &messageHandler, std::placeholders::_1));
+	socketClient.socket()->on("ACCEPT_HANDOFF", std::bind(&MessageHandler::AcceptHandoff, &messageHandler, std::placeholders::_1));
+	socketClient.socket()->on("REFUSE_COORD", std::bind(&MessageHandler::RefuseCoordination, &messageHandler, std::placeholders::_1));
+	socketClient.socket()->on("ACCEPT_COORD", std::bind(&MessageHandler::AcceptCoordination, &messageHandler, std::placeholders::_1));
+	socketClient.socket()->on("CORRELATE_TARGET", std::bind(&MessageHandler::CorrelateTarget, &messageHandler, std::placeholders::_1));
+	socketClient.socket()->on("DECORRELATE_TARGET", std::bind(&MessageHandler::DecorrelateTarget, &messageHandler, std::placeholders::_1));
 
 	// EXCDS information requests
 	socketClient.socket()->on("REQUEST_ALL_FP_DATA", std::bind(&MessageHandler::RequestAllAircraft, &messageHandler, std::placeholders::_1));
@@ -224,6 +230,23 @@ void CEXCDSBridge::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan
 	}
 }
 
+void CEXCDSBridge::OnFlightPlanFlightStripPushed(EuroScopePlugIn::CFlightPlan fp)
+{
+	sio::message::ptr response = sio::object_message::create();
+	CEXCDSBridge* bridgeInstance = CEXCDSBridge::GetInstance();
+	MessageHandler::PrepareFlightPlanDataResponse(fp, response);
+
+	bridgeInstance->GetSocket()->emit("SEND_FP_DATA", response);
+
+	if (fp.GetCorrelatedRadarTarget().IsValid())
+	{
+		sio::message::ptr rtresponse = sio::object_message::create();
+		MessageHandler::PrepareRadarTargetResponse(fp.GetCorrelatedRadarTarget(), rtresponse);
+
+		bridgeInstance->GetSocket()->emit("SEND_RT_DATA", rtresponse);
+	}
+}
+
 void CEXCDSBridge::OnPlaneInformationUpdate(const char* sCallsign,
 	const char* sLivery,
 	const char* sPlaneType)
@@ -253,6 +276,7 @@ void CEXCDSBridge::OnCompileFrequencyChat(const char* sSenderCallsign,
 	sio::message::ptr response = sio::object_message::create();
 
 	response->get_map()["sender"] = sio::string_message::create(sSenderCallsign);
+	response->get_map()["channel"] = sio::string_message::create(std::to_string(Frequency));
 	response->get_map()["message"] = sio::string_message::create(sChatMessage);
 
 	CEXCDSBridge* bridgeInstance = CEXCDSBridge::GetInstance();
@@ -266,6 +290,7 @@ void CEXCDSBridge::OnCompilePrivateChat(const char* sSenderCallsign,
 	sio::message::ptr response = sio::object_message::create();
 
 	response->get_map()["sender"] = sio::string_message::create(sSenderCallsign);
+	response->get_map()["channel"] = sio::string_message::create(sReceiverCallsign);
 	response->get_map()["message"] = sio::string_message::create(sChatMessage);
 
 	CEXCDSBridge* bridgeInstance = CEXCDSBridge::GetInstance();

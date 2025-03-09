@@ -17,6 +17,7 @@ public:
 
     // Listens to EuroScope
     void OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan FlightPlan);
+    void OnFlightPlanFlightStripPushed(EuroScopePlugIn::CFlightPlan fp);
     void OnFlightPlanControllerAssignedDataUpdate(EuroScopePlugIn::CFlightPlan FlightPlan, int DataType);
     void OnFlightPlanDisconnect(EuroScopePlugIn::CFlightPlan FlightPlan);
     void OnTimer(int Counter);
