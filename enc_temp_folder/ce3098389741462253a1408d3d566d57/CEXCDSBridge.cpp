@@ -92,40 +92,35 @@ void CEXCDSBridge::bind_events()
 
 void CEXCDSBridge::OnTimer(int counter)
 {
-	if (counter % 5 != 0) return;
+	if (counter % 3 != 0) return;
 
 	CEXCDSBridge* bridgeInstance = CEXCDSBridge::GetInstance();
 
 	try {
-		sio::message::ptr statusMessage = sio::object_message::create();
-
-		EuroScopePlugIn::CController me = bridgeInstance->ControllerMyself();
-		if (me.IsValid()) {
-			statusMessage->get_map()["cjs"] = sio::string_message::create(me.GetPositionId());
-			statusMessage->get_map()["callsign"] = sio::string_message::create(me.GetCallsign());
-			statusMessage->get_map()["freq"] = sio::double_message::create(me.GetPrimaryFrequency());
-		}
-
-		statusMessage->get_map()["connection"] = sio::int_message::create(bridgeInstance->GetConnectionType());
-
-		bridgeInstance->GetSocket()->emit("STATUS", statusMessage);
-
-		if (!me.IsValid()) return;
-
 		EuroScopePlugIn::CFlightPlan flightPlan = bridgeInstance->FlightPlanSelectFirst();
 
 		// @see https://github.com/socketio/socket.io-client-cpp/issues/263
 		// Iterate over all the flight plans ES has
 		sio::message::ptr arrayMessage = sio::array_message::create();
 
-		const EuroScopePlugIn::CPosition center = me.GetPosition();
-
 		while (flightPlan.IsValid()) {
+			//if (!flightPlan.GetCorrelatedRadarTarget().IsValid() && flightPlan.GetFPTrackPosition().IsValid())
+			//{
+			//	EuroScopePlugIn::CRadarTargetPositionData rt = flightPlan.GetFPTrackPosition();
+			//	EuroScopePlugIn::CFlightPlan fp = flightPlan;
+
+			//	sio::message::ptr trackMsg = sio::object_message::create();
+
+			//	double lat = rt.GetPosition().m_Latitude;
+			//	double lon = rt.GetPosition().m_Longitude;
+
+			//	trackMsg->get_map()["position"] = sio::object_message::create();
+			//	trackMsg->get_map()["position"]->get_map()["lat"] = sio::double_message::create(lat);
+			//	trackMsg->get_map()["position"]->get_map()["lon"] = sio::double_message::create(lon);
+			//}
+
 			// If the FP is in an FLIGHT_PLAN_STATE_NON_CONCERNED or FLIGHT_PLAN_STATE_NOTIFIED state, we don't need this data
-			if (flightPlan.GetState() == 0 &&
-				(flightPlan.GetFPTrackPosition().IsValid() &&
-				flightPlan.GetFPTrackPosition().GetPosition().DistanceTo(center) > me.GetRange())
-			)
+			if (flightPlan.GetState() == 0 && !flightPlan.GetFPTrackPosition().IsValid())
 			{
 				flightPlan = bridgeInstance->FlightPlanSelectNext(flightPlan);
 				continue;
@@ -175,19 +170,36 @@ void CEXCDSBridge::OnTimer(int counter)
 	} catch (...) {
 		OutputDebugString("EXCDS Error: 5 Second Controller refresh error");
 	}
+
+	try {
+		sio::message::ptr statusMessage = sio::object_message::create();
+
+		EuroScopePlugIn::CController me = bridgeInstance->ControllerMyself();
+		if (me.IsValid()) {
+			statusMessage->get_map()["cjs"] = sio::string_message::create(me.GetPositionId());
+			statusMessage->get_map()["callsign"] = sio::string_message::create(me.GetCallsign());
+			statusMessage->get_map()["freq"] = sio::double_message::create(me.GetPrimaryFrequency());
+		}
+
+		statusMessage->get_map()["connection"] = sio::int_message::create(bridgeInstance->GetConnectionType());
+
+		bridgeInstance->GetSocket()->emit("STATUS", statusMessage);
+	} catch (...) {
+		OutputDebugString("EXCDS Error: 5 Second connection/myself controller check");
+	}
 }
 
-//void CEXCDSBridge::OnControllerPositionUpdate(EuroScopePlugIn::CController controller)
-//{
-//	sio::message::ptr response = sio::object_message::create();
-//	MessageHandler::RequestAirports(response);
-//}
-//
-//void CEXCDSBridge::OnControllerDisconnect(EuroScopePlugIn::CController controller)
-//{
-//	sio::message::ptr response = sio::object_message::create();
-//	MessageHandler::RequestAirports(response);
-//}
+void CEXCDSBridge::OnControllerPositionUpdate(EuroScopePlugIn::CController controller)
+{
+	sio::message::ptr response = sio::object_message::create();
+	MessageHandler::RequestAirports(response);
+}
+
+void CEXCDSBridge::OnControllerDisconnect(EuroScopePlugIn::CController controller)
+{
+	sio::message::ptr response = sio::object_message::create();
+	MessageHandler::RequestAirports(response);
+}
 
 void CEXCDSBridge::OnFlightPlanControllerAssignedDataUpdate(EuroScopePlugIn::CFlightPlan fp, int Datatype)
 {

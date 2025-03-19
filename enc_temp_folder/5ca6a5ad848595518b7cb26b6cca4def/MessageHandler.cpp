@@ -1861,61 +1861,37 @@ void MessageHandler::PrepareFlightPlanDataResponse(EuroScopePlugIn::CFlightPlan 
 			response->get_map()["fp_track"]->get_map()["track"] = double_message::create(fp.GetFPTrackPosition().GetReportedHeadingTrueNorth());
 		}
 
+		// Route Information
+		EuroScopePlugIn::CPosition origin = fp.GetExtractedRoute().GetPointPosition(0);
+		EuroScopePlugIn::CPosition destination = fp.GetExtractedRoute().GetPointPosition(fp.GetExtractedRoute().GetPointsNumber() - 1);
 
-		if (fp.GetState() > 0) {
-			// Route Information
-			EuroScopePlugIn::CPosition origin = fp.GetExtractedRoute().GetPointPosition(0);
-			EuroScopePlugIn::CPosition destination = fp.GetExtractedRoute().GetPointPosition(fp.GetExtractedRoute().GetPointsNumber() - 1);
+		boolean eastbound = true;
+		if (origin.DirectionTo(destination) > 179)
+			eastbound = false;
 
-			boolean eastbound = true;
-			if (origin.DirectionTo(destination) > 179)
-				eastbound = false;
+		std::string dep = fp.GetFlightPlanData().GetOrigin();
+		std::string depRwy = fp.GetFlightPlanData().GetDepartureRwy();
+		std::string sid = fp.GetFlightPlanData().GetSidName();
 
-			std::string dep = fp.GetFlightPlanData().GetOrigin();
-			std::string depRwy = fp.GetFlightPlanData().GetDepartureRwy();
-			std::string sid = fp.GetFlightPlanData().GetSidName();
+		std::string dest = fp.GetFlightPlanData().GetDestination();
+		std::string arrRwy = fp.GetFlightPlanData().GetArrivalRwy();
+		std::string star = fp.GetFlightPlanData().GetStarName();
 
-			std::string dest = fp.GetFlightPlanData().GetDestination();
-			std::string arrRwy = fp.GetFlightPlanData().GetArrivalRwy();
-			std::string star = fp.GetFlightPlanData().GetStarName();
+		std::string route = fp.GetFlightPlanData().GetRoute();
 
-			std::string route = fp.GetFlightPlanData().GetRoute();
+		std::string first = fp.GetExtractedRoute().GetPointName(1);
 
-			std::string first = fp.GetExtractedRoute().GetPointName(1);
+		EuroScopePlugIn::CPosition sectorExit = fp.GetPositionPredictions().GetPosition(fp.GetSectorExitMinutes());
+		double sectorExitLat = sectorExit.m_Latitude;
+		double sectorExitLong = sectorExit.m_Longitude;
 
-			EuroScopePlugIn::CPosition sectorExit = fp.GetPositionPredictions().GetPosition(fp.GetSectorExitMinutes());
-			double sectorExitLat = sectorExit.m_Latitude;
-			double sectorExitLong = sectorExit.m_Longitude;
+		int sectorEntryTime = fp.GetSectorEntryMinutes();
+		int sectorExitTime = fp.GetSectorExitMinutes();
 
-			int sectorEntryTime = fp.GetSectorEntryMinutes();
-			int sectorExitTime = fp.GetSectorExitMinutes();
-
-			response->get_map()["route"] = object_message::create();
-			response->get_map()["route"]->get_map()["departure"] = object_message::create();
-			response->get_map()["route"]->get_map()["destination"] = object_message::create();
-
-			response->get_map()["route"]->get_map()["departure"]->get_map()["code"] = string_message::create(dep);
-			response->get_map()["route"]->get_map()["departure"]->get_map()["rwy"] = string_message::create(depRwy);
-			response->get_map()["route"]->get_map()["departure"]->get_map()["procedure"] = string_message::create(ApiHelper::ToASCII(sid));
-			response->get_map()["route"]->get_map()["departure"]->get_map()["distance"] = double_message::create(fp.GetDistanceFromOrigin());
-			response->get_map()["route"]->get_map()["destination"]->get_map()["code"] = string_message::create(dest);
-			response->get_map()["route"]->get_map()["destination"]->get_map()["rwy"] = string_message::create(arrRwy);
-			response->get_map()["route"]->get_map()["destination"]->get_map()["procedure"] = string_message::create(ApiHelper::ToASCII(star));
-			response->get_map()["route"]->get_map()["destination"]->get_map()["distance"] = double_message::create(fp.GetDistanceToDestination());
-			response->get_map()["route"]->get_map()["eastbound"] = bool_message::create(eastbound);
-			response->get_map()["route"]->get_map()["text"] = string_message::create(ApiHelper::ToASCII(route));
-			response->get_map()["route"]->get_map()["first_fix"] = string_message::create(ApiHelper::ToASCII(first));
-			response->get_map()["route"]->get_map()["track"] = int_message::create(origin.DirectionTo(destination));
-			response->get_map()["route"]->get_map()["sector_exit_lat"] = double_message::create(sectorExitLat);
-			response->get_map()["route"]->get_map()["sector_exit_lon"] = double_message::create(sectorExitLong);
-			response->get_map()["route"]->get_map()["sector_entry_time"] = int_message::create(sectorEntryTime);
-			response->get_map()["route"]->get_map()["sector_exit_time"] = int_message::create(sectorExitTime);
-		}
+		sio::message::ptr pointsMessage = sio::array_message::create();
 
 		if (fp.GetFPTrackPosition().IsValid())
 		{
-			sio::message::ptr pointsMessage = sio::array_message::create();
-
 			for (int i = 0; i < fp.GetExtractedRoute().GetPointsNumber(); i++) {
 				sio::message::ptr msg = sio::object_message::create();
 
@@ -1927,9 +1903,29 @@ void MessageHandler::PrepareFlightPlanDataResponse(EuroScopePlugIn::CFlightPlan 
 
 				pointsMessage->get_vector().push_back(msg);
 			}
-
-			response->get_map()["points"] = pointsMessage;
 		}
+
+		response->get_map()["route"] = object_message::create();
+		response->get_map()["route"]->get_map()["departure"] = object_message::create();
+		response->get_map()["route"]->get_map()["destination"] = object_message::create();
+
+		response->get_map()["route"]->get_map()["departure"]->get_map()["code"] = string_message::create(dep);
+		response->get_map()["route"]->get_map()["departure"]->get_map()["rwy"] = string_message::create(depRwy);
+		response->get_map()["route"]->get_map()["departure"]->get_map()["procedure"] = string_message::create(ApiHelper::ToASCII(sid));
+		response->get_map()["route"]->get_map()["departure"]->get_map()["distance"] = double_message::create(fp.GetDistanceFromOrigin());
+		response->get_map()["route"]->get_map()["destination"]->get_map()["code"] = string_message::create(dest);
+		response->get_map()["route"]->get_map()["destination"]->get_map()["rwy"] = string_message::create(arrRwy);
+		response->get_map()["route"]->get_map()["destination"]->get_map()["procedure"] = string_message::create(ApiHelper::ToASCII(star));
+		response->get_map()["route"]->get_map()["destination"]->get_map()["distance"] = double_message::create(fp.GetDistanceToDestination());
+		response->get_map()["route"]->get_map()["eastbound"] = bool_message::create(eastbound);
+		response->get_map()["route"]->get_map()["text"] = string_message::create(ApiHelper::ToASCII(route));
+		response->get_map()["route"]->get_map()["first_fix"] = string_message::create(ApiHelper::ToASCII(first));
+		response->get_map()["route"]->get_map()["track"] = int_message::create(origin.DirectionTo(destination));
+		response->get_map()["route"]->get_map()["sector_exit_lat"] = double_message::create(sectorExitLat);
+		response->get_map()["route"]->get_map()["sector_exit_lon"] = double_message::create(sectorExitLong);
+		response->get_map()["route"]->get_map()["sector_entry_time"] = int_message::create(sectorEntryTime);
+		response->get_map()["route"]->get_map()["sector_exit_time"] = int_message::create(sectorExitTime);
+		response->get_map()["points"] = pointsMessage;
 
 		// Speeds
 		std::string speed;
@@ -1956,8 +1952,9 @@ void MessageHandler::PrepareFlightPlanDataResponse(EuroScopePlugIn::CFlightPlan 
 
 		response->get_map()["estimates"] = object_message::create();
 
-		if (fp.GetState() > 1 && fp.GetFPState() == 1)
+		if (fp.GetState() > 1 && fp.GetState() != EuroScopePlugIn::FLIGHT_PLAN_STATE_REDUNDANT)
 		{
+			CEXCDSBridge* bridgeInstance = CEXCDSBridge::GetInstance();
 			EuroScopePlugIn::CPosition origin = fp.GetExtractedRoute().GetPointPosition(0);
 			EuroScopePlugIn::CPosition destination = fp.GetExtractedRoute().GetPointPosition(fp.GetExtractedRoute().GetPointsNumber() - 1);
 
@@ -1991,6 +1988,7 @@ void MessageHandler::PrepareFlightPlanDataResponse(EuroScopePlugIn::CFlightPlan 
 
 					for (int j = 1; j <= upperBound; j++)
 					{
+
 						// If we are getting closer to the fix
 						if (distance > fp.GetPositionPredictions().GetPosition(j).DistanceTo(posn))
 						{
