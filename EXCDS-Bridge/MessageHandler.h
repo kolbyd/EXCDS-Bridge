@@ -9,6 +9,9 @@ public:
 	void SendKeyboardPresses(std::vector<WORD> message);
 	void SendKeyboardString(const std::string str);
 	void SendPDC(sio::event& e);
+	void SendFrequencyMessage(sio::event& e);
+	void SendRawTextMessage(sio::event& e);
+	void RequestSectorData(sio::event& e);
 	void HandoffTarget(sio::event& e);
 	void RefuseHandoff(sio::event& e);
 	void AcceptHandoff(sio::event& e);
@@ -18,11 +21,13 @@ public:
 	void DecorrelateTarget(sio::event& e);
 	void UpdateScratchPad(sio::event&);
 	void UpdateRoute(sio::event& e);
+	void UpdateAircraftState(sio::event& e);
 	void UpdateDepartureTime(sio::event& e);
 	void UpdateSpeed(sio::event&);
 	void UpdateFlightPlan(sio::event&);
 	void UpdateAircraftStatus(sio::event&);
 	void UpdateTrackingStatus(sio::event&);
+	void PushFlightStrip(sio::event& e);
 	void PointoutTarget(sio::event& e);
 	void UpdateAnnotation(sio::event& e);
 	void UpdateSquawk(sio::event& e);

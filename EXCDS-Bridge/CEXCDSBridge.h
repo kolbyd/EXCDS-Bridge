@@ -17,18 +17,19 @@ public:
 
     // Listens to EuroScope
     void OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan FlightPlan);
-    void OnFlightPlanFlightStripPushed(EuroScopePlugIn::CFlightPlan fp);
+    void OnFlightPlanFlightStripPushed(EuroScopePlugIn::CFlightPlan fp, const char* sSenderController);
     void OnFlightPlanControllerAssignedDataUpdate(EuroScopePlugIn::CFlightPlan FlightPlan, int DataType);
     void OnFlightPlanDisconnect(EuroScopePlugIn::CFlightPlan FlightPlan);
     void OnTimer(int Counter);
-    void OnControllerPositionUpdate(EuroScopePlugIn::CController controller);
-    void OnControllerDisconnect(EuroScopePlugIn::CController controller);
+    //void OnControllerPositionUpdate(EuroScopePlugIn::CController controller);
+    //void OnControllerDisconnect(EuroScopePlugIn::CController controller);
     void OnRadarTargetPositionUpdate(EuroScopePlugIn::CRadarTarget rt);
     void OnCompileFrequencyChat(const char* sSenderCallsign,
         double Frequency,
         const char* sChatMessage);
     void OnCompilePrivateChat(const char* sSenderCallsign, const char* sReceiverCallsign, const char* sChatMessage);
     void CEXCDSBridge::OnPlaneInformationUpdate(const char* sCallsign, const char* sLivery, const char* sPlaneType);
+    void OnControllerDisconnect(EuroScopePlugIn::CController controller);
 private:
     void bind_events();
 };

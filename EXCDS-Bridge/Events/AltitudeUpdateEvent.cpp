@@ -13,8 +13,6 @@ void AltitudeUpdateEvent::ExecuteEvent(sio::event& event, EuroScopePlugIn::CFlig
 		int cleared = e["cleared"]->get_int();
 		int final = e["final"]->get_int();
 		int coordinated = e["coordinated"]->get_int();
-		// Reported altitude, goes to strip annotations for situ
-		std::string reported = e["reported"]->get_string();
 
 		if (cleared != -1) {
 			flightPlan.GetControllerAssignedData().SetClearedAltitude(cleared);
@@ -27,10 +25,6 @@ void AltitudeUpdateEvent::ExecuteEvent(sio::event& event, EuroScopePlugIn::CFlig
 
 		if (coordinated != -1) {
 			flightPlan.InitiateCoordination(flightPlan.GetCoordinatedNextController(), flightPlan.GetNextCopxPointName(), coordinated);
-		}
-
-		if (reported != "") {
-			flightPlan.GetControllerAssignedData().SetFlightStripAnnotation(8, reported.c_str());
 		}
 
 		flightPlan.GetFlightPlanData().AmendFlightPlan();
