@@ -90,7 +90,6 @@ void CEXCDSBridge::bind_events()
 	socketClient.socket()->on("PUSH_FLIGHT_STRIP", std::bind(&MessageHandler::PushFlightStrip, &messageHandler, std::placeholders::_1));
 	socketClient.socket()->on("UPDATE_COMM_TYPE", std::bind(&MessageHandler::UpdateCommuncationType, &messageHandler, std::placeholders::_1));
 	socketClient.socket()->on("SYNC_ANNOTATIONS", std::bind(&MessageHandler::SyncAnnotations, &messageHandler, std::placeholders::_1));
-	socketClient.socket()->on("INITIATE_COORDINATION", std::bind(&MessageHandler::InitiateCoordination, &messageHandler, std::placeholders::_1));
 
 	// EXCDS information requests
 	socketClient.socket()->on("REQUEST_ALL_FP_DATA", std::bind(&MessageHandler::RequestAllAircraft, &messageHandler, std::placeholders::_1));

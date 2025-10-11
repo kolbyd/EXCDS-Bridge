@@ -639,53 +639,6 @@ void MessageHandler::UpdateAltitude(sio::event& e)
 	}
 }
 
-void MessageHandler::InitiateCoordination(sio::event& e)
-{
-	try {
-		// Get aircraft data from EXCDS
-		std::string callsign = e.get_message()->get_map()["callsign"]->get_string();
-		std::string point = e.get_message()->get_map()["point"]->get_string();
-		int altitude = e.get_message()->get_map()["altitude"]->get_int();
-
-		// Init Response
-		message::ptr response = object_message::create();
-		response->get_map()["callsign"] = string_message::create(callsign);
-
-		EuroScopePlugIn::CFlightPlan fp = CEXCDSBridge::GetInstance()->FlightPlanSelect(callsign.c_str());
-
-		// Is the flight plan valid?
-		if (!FlightPlanChecks(fp, response, e)) {
-			return;
-		}
-
-		bool isAssigned = false;
-
-		std::string controller = fp.GetCoordinatedNextController();
-		if (!fp.GetTrackingControllerIsMe()) {
-			controller = fp.GetTrackingControllerCallsign();
-		}
-
-		if (controller.length() > 0) {
-
-		isAssigned = fp.InitiateCoordination(controller.c_str(), point.c_str(), altitude);
-		}
-
-		if (!isAssigned) {
-			e.put_ack_message(NotModified(response, "Unknown reason."));
-
-			CEXCDSBridge::SendEuroscopeMessage(callsign.c_str(), "Cannot modify.", "UNKNOWN");
-			return;
-		}
-
-		// Tell EXCDS the change is done
-		response->get_map()["modified"] = bool_message::create(true);
-		e.put_ack_message(response);
-	}
-	catch (...) {
-		OutputDebugString("EXCDS Error: Update speed error");
-	}
-}
-
 void MessageHandler::UpdateSpeed(sio::event& e)
 {
 	try {
