@@ -1,0 +1,5 @@
+159.203.44.51 AUTOMATIC
+sweatbox.vatsim.net SweatBox
+sweatbox-2.vatsim.net SweatBox-2
+localhost localhost
+loopback loopback

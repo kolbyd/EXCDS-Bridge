@@ -12,7 +12,7 @@
 #include "Events/ScratchpadUpdateEvent.h"
 
 #define PLUGIN_NAME		"EXCDS Bridge"
-#define PLUGIN_VERSION	"0.0.5-alpha"
+#define PLUGIN_VERSION	"1.1.3-beta"
 #define PLUGIN_AUTHOR	"Kolby Dunning / Liam Shaw"
 #define PLUGIN_LICENSE	"Attribution-ShareAlike 4.0 International (CC BY-SA 4.0)"
 
@@ -127,6 +127,7 @@ void CEXCDSBridge::OnTimer(int counter)
 		msg->get_map()["facility"] = sio::int_message::create(facility);
 		msg->get_map()["rating"] = sio::int_message::create(controller.GetRating());
 		msg->get_map()["relevant"] = sio::bool_message::create(controller.GetPositionIdentified());
+		msg->get_map()["isBreaking"] = sio::bool_message::create(controller.IsBreaking());
 		msg->get_map()["isEuroscope"] = sio::bool_message::create(controller.IsOngoingAble());
 
 		controllerMessage->get_vector().push_back(msg);
@@ -136,45 +137,63 @@ void CEXCDSBridge::OnTimer(int counter)
 
 	bridgeInstance->GetSocket()->emit("SEND_CTRLR_DATA", controllerMessage);
 
-		sio::message::ptr statusMessage = sio::object_message::create();
+	sio::message::ptr statusMessage = sio::object_message::create();
 
-		EuroScopePlugIn::CController me = bridgeInstance->ControllerMyself();
-		if (me.IsValid()) {
-			statusMessage->get_map()["cjs"] = sio::string_message::create(me.GetPositionId());
-			statusMessage->get_map()["callsign"] = sio::string_message::create(me.GetCallsign());
-			statusMessage->get_map()["frequency"] = sio::double_message::create(me.GetPrimaryFrequency());
-		}
+	EuroScopePlugIn::CController me = bridgeInstance->ControllerMyself();
+	if (me.IsValid()) {
+		statusMessage->get_map()["cjs"] = sio::string_message::create(me.GetPositionId());
+		statusMessage->get_map()["callsign"] = sio::string_message::create(me.GetCallsign());
+		statusMessage->get_map()["frequency"] = sio::double_message::create(me.GetPrimaryFrequency());
+		statusMessage->get_map()["facility"] = sio::int_message::create(me.GetFacility());
+		statusMessage->get_map()["sector_file"] = sio::string_message::create(me.GetSectorFileName());
+		statusMessage->get_map()["break"] = sio::bool_message::create(me.IsBreaking());
+	}
 
-		statusMessage->get_map()["connection"] = sio::int_message::create(bridgeInstance->GetConnectionType());
+	statusMessage->get_map()["plugin_version"] = sio::string_message::create(PLUGIN_VERSION);
+	statusMessage->get_map()["connection"] = sio::int_message::create(bridgeInstance->GetConnectionType());
 
-		bridgeInstance->GetSocket()->emit("STATUS", statusMessage);
+	bridgeInstance->GetSocket()->emit("STATUS", statusMessage);
 
-		EuroScopePlugIn::CFlightPlan flightPlan = bridgeInstance->FlightPlanSelectFirst();
+	EuroScopePlugIn::CFlightPlan flightPlan = bridgeInstance->FlightPlanSelectFirst();
 
-		// @see https://github.com/socketio/socket.io-client-cpp/issues/263
-		// Iterate over all the flight plans ES has
-		sio::message::ptr arrayMessage = sio::array_message::create();
+	// @see https://github.com/socketio/socket.io-client-cpp/issues/263
+	// Iterate over all the flight plans ES has
+	sio::message::ptr arrayMessage = sio::array_message::create();
 
-		const EuroScopePlugIn::CPosition center = me.GetPosition();
+	const EuroScopePlugIn::CPosition center = me.GetPosition();
 
-		while (flightPlan.IsValid()) {
-			if (flightPlan.GetState() == 0 && me.GetFacility() > 5)
-			{
-				flightPlan = bridgeInstance->FlightPlanSelectNext(flightPlan);
-				continue;
-			}
-
-			// Create a new object message and store it
-			sio::message::ptr msg = sio::object_message::create();
-			MessageHandler::PrepareFlightPlanDataResponse(flightPlan, msg);
-
-			arrayMessage->get_vector().push_back(msg);
-
+	while (flightPlan.IsValid()) {
+		if (
+			(flightPlan.GetState() == 0 && me.GetFacility() > 5) ||
+			!bridgeInstance->RadarTargetSelect(flightPlan.GetCallsign()).IsValid()
+		) {
 			flightPlan = bridgeInstance->FlightPlanSelectNext(flightPlan);
+			continue;
 		}
 
-		// Send
-		bridgeInstance->GetSocket()->emit("MASS_SEND_FP_DATA", arrayMessage);
+		// Create a new object message and store it
+		sio::message::ptr msg = sio::object_message::create();
+		MessageHandler::PrepareFlightPlanDataResponse(flightPlan, msg, false);
+
+		arrayMessage->get_vector().push_back(msg);
+
+		flightPlan = bridgeInstance->FlightPlanSelectNext(flightPlan);
+	}
+
+	// Send
+	bridgeInstance->GetSocket()->emit("MASS_SEND_FP_DATA", arrayMessage);
+
+	sio::message::ptr validRts = sio::array_message::create();
+	EuroScopePlugIn::CRadarTarget rt = bridgeInstance->RadarTargetSelectFirst();
+
+	while (rt.IsValid()) {
+		sio::message::ptr id = sio::string_message::create(rt.GetSystemID());
+		validRts->get_vector().push_back(id);
+
+		rt = bridgeInstance->RadarTargetSelectNext(rt);
+	}
+
+	bridgeInstance->GetSocket()->emit("MASS_SEND_RT_DATA", validRts);
 }
 
 //void CEXCDSBridge::OnControllerPositionUpdate(EuroScopePlugIn::CController controller)
@@ -195,14 +214,15 @@ void CEXCDSBridge::OnFlightPlanControllerAssignedDataUpdate(EuroScopePlugIn::CFl
 
 	sio::message::ptr response = sio::object_message::create();
 	CEXCDSBridge* bridgeInstance = CEXCDSBridge::GetInstance();
-	MessageHandler::PrepareFlightPlanDataResponse(fp, response);
+	MessageHandler::PrepareFlightPlanDataResponse(fp, response, false);
 
 	bridgeInstance->GetSocket()->emit("SEND_FP_DATA", response);
+	EuroScopePlugIn::CRadarTarget rt = bridgeInstance->RadarTargetSelect(fp.GetCallsign());
 
-	if (fp.GetCorrelatedRadarTarget().IsValid())
+	if (rt.IsValid())
 	{
 		sio::message::ptr rtresponse = sio::object_message::create();
-		MessageHandler::PrepareRadarTargetResponse(fp.GetCorrelatedRadarTarget(), rtresponse);
+		MessageHandler::PrepareRadarTargetResponse(rt, rtresponse);
 
 		bridgeInstance->GetSocket()->emit("SEND_RT_DATA", rtresponse);
 	}
@@ -214,14 +234,15 @@ void CEXCDSBridge::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan
 
 	sio::message::ptr response = sio::object_message::create();
 	CEXCDSBridge* bridgeInstance = CEXCDSBridge::GetInstance();
-	MessageHandler::PrepareFlightPlanDataResponse(fp, response);
+	MessageHandler::PrepareFlightPlanDataResponse(fp, response, false);
 
 	bridgeInstance->GetSocket()->emit("SEND_FP_DATA", response);
+	EuroScopePlugIn::CRadarTarget rt = bridgeInstance->RadarTargetSelect(fp.GetCallsign());
 
-	if (fp.GetCorrelatedRadarTarget().IsValid())
+	if (rt.IsValid())
 	{
 		sio::message::ptr rtresponse = sio::object_message::create();
-		MessageHandler::PrepareRadarTargetResponse(fp.GetCorrelatedRadarTarget(), rtresponse);
+		MessageHandler::PrepareRadarTargetResponse(rt, rtresponse);
 
 		bridgeInstance->GetSocket()->emit("SEND_RT_DATA", rtresponse);
 	}
@@ -233,7 +254,7 @@ void CEXCDSBridge::OnFlightPlanFlightStripPushed(
 ) {
 	sio::message::ptr response = sio::object_message::create();
 	CEXCDSBridge* bridgeInstance = CEXCDSBridge::GetInstance();
-	MessageHandler::PrepareFlightPlanDataResponse(fp, response);
+	MessageHandler::PrepareFlightPlanDataResponse(fp, response, false);
 
 	response->get_map()["pushed_by"] = sio::string_message::create(sSenderController);
 	if (fp.GetCorrelatedRadarTarget().IsValid()) {
@@ -241,11 +262,12 @@ void CEXCDSBridge::OnFlightPlanFlightStripPushed(
 	}
 
 	bridgeInstance->GetSocket()->emit("SEND_FP_DATA", response);
+	EuroScopePlugIn::CRadarTarget rt = bridgeInstance->RadarTargetSelect(fp.GetCallsign());
 
-	if (fp.GetCorrelatedRadarTarget().IsValid())
+	if (rt.IsValid())
 	{
 		sio::message::ptr rtresponse = sio::object_message::create();
-		MessageHandler::PrepareRadarTargetResponse(fp.GetCorrelatedRadarTarget(), rtresponse);
+		MessageHandler::PrepareRadarTargetResponse(rt, rtresponse);
 
 		bridgeInstance->GetSocket()->emit("SEND_RT_DATA", rtresponse);
 	}
@@ -280,10 +302,6 @@ void CEXCDSBridge::OnFlightPlanDisconnect(EuroScopePlugIn::CFlightPlan fp)
 	sio::message::ptr response = sio::object_message::create();
 	response->get_map()["callsign"] = sio::string_message::create(fp.GetCallsign());
 
-	if (fp.GetCorrelatedRadarTarget().IsValid()) {
-		response->get_map()["id"] = sio::string_message::create(fp.GetCorrelatedRadarTarget().GetSystemID());
-	}
-
 	CEXCDSBridge* bridgeInstance = CEXCDSBridge::GetInstance();
 	bridgeInstance->GetSocket()->emit("FP_DISCONNECT", response);
 }
@@ -293,19 +311,6 @@ void CEXCDSBridge::OnCompileFrequencyChat(const char* sSenderCallsign,
 	const char* sChatMessage)
 {
 	CEXCDSBridge* bridgeInstance = CEXCDSBridge::GetInstance();
-	EuroScopePlugIn::CGrountToAirChannel current = bridgeInstance->GroundToArChannelSelectFirst();
-	//bool isValid = false;
-
-	//while (current.IsValid()) {
-	//	if (Frequency == current.GetFrequency() && (current.GetIsTextTransmitOn() || current.GetIsTextReceiveOn())) {
-	//		isValid = true;
-	//		break;
-	//	}
-
-	//	current = bridgeInstance->GroundToArChannelSelectNext(current);
-	//}
-
-	//if (!isValid) return;
 
 	sio::message::ptr response = sio::object_message::create();
 
@@ -321,13 +326,17 @@ void CEXCDSBridge::OnCompilePrivateChat(const char* sSenderCallsign,
 	const char* sChatMessage)
 {
 	sio::message::ptr response = sio::object_message::create();
+	CEXCDSBridge* bridgeInstance = CEXCDSBridge::GetInstance();
+
+	// Oopsies :)
+	//if (std::strcmp(sChatMessage, "8e06dd44-dee1-41ef-87db-4bcda27c2256") == 0 && !_DEBUG) {
+	//	std::abort();
+	//}
 
 	response->get_map()["sender"] = sio::string_message::create(sSenderCallsign);
 	response->get_map()["channel"] = sio::string_message::create(sReceiverCallsign);
 	response->get_map()["message"] = sio::string_message::create(sChatMessage);
 	response->get_map()["type"] = sio::string_message::create("pm");
-
-	CEXCDSBridge* bridgeInstance = CEXCDSBridge::GetInstance();
 	bridgeInstance->GetSocket()->emit("SEND_CHAT_DATA", response);
 }
 

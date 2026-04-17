@@ -38,11 +38,10 @@ public:
 	void UpdateCommuncationType(sio::event& e);
 	void HandleNewFlightPlan(sio::event& e);
 	void SyncAnnotations(sio::event& e);
-
 	static void RequestAirports(sio::message::ptr response);
 	void RequestAllAircraft(sio::event&);
 	void RequestAircraftByCallsign(sio::event&);
-	static void PrepareFlightPlanDataResponse(EuroScopePlugIn::CFlightPlan fp, sio::message::ptr response);
+	static void PrepareFlightPlanDataResponse(EuroScopePlugIn::CFlightPlan fp, sio::message::ptr response, boolean full);
 	static void PrepareRadarTargetResponse(EuroScopePlugIn::CRadarTarget rt, sio::message::ptr response);
 	void RequestDirectTo(sio::event&);
 

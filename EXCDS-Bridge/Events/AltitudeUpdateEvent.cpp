@@ -13,6 +13,7 @@ void AltitudeUpdateEvent::ExecuteEvent(sio::event& event, EuroScopePlugIn::CFlig
 		int cleared = e["cleared"]->get_int();
 		int final = e["final"]->get_int();
 		int coordinated = e["coordinated"]->get_int();
+		int inalt = e["entry"]->get_int();
 
 		if (cleared != -1) {
 			flightPlan.GetControllerAssignedData().SetClearedAltitude(cleared);
@@ -23,11 +24,15 @@ void AltitudeUpdateEvent::ExecuteEvent(sio::event& event, EuroScopePlugIn::CFlig
 			flightPlan.GetControllerAssignedData().SetFinalAltitude(final);
 		}
 
-		if (coordinated != -1) {
+		EuroScopePlugIn::CController next = CEXCDSBridge::GetInstance()->ControllerSelect(flightPlan.GetCoordinatedNextController());
+		if (coordinated != -1 && next.IsValid()) {
 			flightPlan.InitiateCoordination(flightPlan.GetCoordinatedNextController(), flightPlan.GetNextCopxPointName(), coordinated);
 		}
 
-		flightPlan.GetFlightPlanData().AmendFlightPlan();
+		EuroScopePlugIn::CController tracking = CEXCDSBridge::GetInstance()->ControllerSelectByPositionId(flightPlan.GetTrackingControllerId());
+		if (inalt != -1 && tracking.IsValid()) {
+			flightPlan.InitiateCoordination(flightPlan.GetTrackingControllerId(), flightPlan.GetNextCopxPointName(), inalt);
+		}
 
 		// Tell EXCDS the change is done
 		SendModified(event);
