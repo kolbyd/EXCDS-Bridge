@@ -12,7 +12,7 @@
 #include "Events/ScratchpadUpdateEvent.h"
 
 #define PLUGIN_NAME		"EXCDS Bridge"
-#define PLUGIN_VERSION	"1.1.3-beta"
+#define PLUGIN_VERSION	"1.1.4-beta"
 #define PLUGIN_AUTHOR	"Kolby Dunning / Liam Shaw"
 #define PLUGIN_LICENSE	"Attribution-ShareAlike 4.0 International (CC BY-SA 4.0)"
 
@@ -39,11 +39,33 @@ CEXCDSBridge::CEXCDSBridge() :
 	// Set instance
 	instance = this;
 
-	socketClient.connect(BRIDGE_HOST + ":" + BRIDGE_PORT);
-	socketClient.socket()->emit("CONNECTED", sio::message::list("true"));
+	socketClient.set_reconnect_attempts(-1);
+	socketClient.set_reconnect_delay(2000);
+	socketClient.set_reconnect_delay_max(15000);
 
-	// Register for the socket events
+	socketClient.set_open_listener([this]() {
+		AFX_MANAGE_STATE(AfxGetStaticModuleState());
+		if (socketClient.socket()) {
+			socketClient.socket()->emit("CONNECTED", sio::message::list("true"));
+		}
+	});
+
+	ensure_socket_connected();
 	bind_events();
+}
+
+void CEXCDSBridge::ensure_socket_connected()
+{
+	if (socketClient.opened()) {
+		return;
+	}
+
+	try {
+		socketClient.connect(BRIDGE_HOST + ":" + BRIDGE_PORT);
+	}
+	catch (...) {
+		OutputDebugString("EXCDS Bridge: failed to connect to VAATS\n");
+	}
 }
 
 CEXCDSBridge::~CEXCDSBridge()
@@ -58,49 +80,56 @@ CEXCDSBridge::~CEXCDSBridge()
 
 void CEXCDSBridge::bind_events()
 {
-	MessageHandler messageHandler;
+	sio::socket::ptr sock = socketClient.socket();
+	if (!sock) {
+		return;
+	}
 
 	// Messages FROM EXCDS, to update aircraft in EuroScope
 	(new AltitudeUpdateEvent())->RegisterEvent("UPDATE_ALTITUDE");
 	(new ScratchpadUpdateEvent())->RegisterEvent("UPDATE_SCRATCHPAD");
 
-	socketClient.socket()->on("UPDATE_TIME", std::bind(&MessageHandler::UpdateTime, &messageHandler, std::placeholders::_1));
-	socketClient.socket()->on("UPDATE_DEPARTURE_TIME", std::bind(&MessageHandler::UpdateDepartureTime, &messageHandler, std::placeholders::_1));
-	socketClient.socket()->on("UPDATE_SPEED", std::bind(&MessageHandler::UpdateSpeed, &messageHandler, std::placeholders::_1));
-	socketClient.socket()->on("UPDATE_STATUS", std::bind(&MessageHandler::UpdateAircraftStatus, &messageHandler, std::placeholders::_1));
-	socketClient.socket()->on("UPDATE_TRACKING_STATUS", std::bind(&MessageHandler::UpdateTrackingStatus, &messageHandler, std::placeholders::_1));
-	socketClient.socket()->on("UPDATE_DIRECT", std::bind(&MessageHandler::UpdateDirectTo, &messageHandler, std::placeholders::_1));
-	socketClient.socket()->on("UPDATE_FLIGHT_PLAN", std::bind(&MessageHandler::UpdateFlightPlan, &messageHandler, std::placeholders::_1));
-	socketClient.socket()->on("UPDATE_ROUTE", std::bind(&MessageHandler::UpdateRoute, &messageHandler, std::placeholders::_1));
-	socketClient.socket()->on("UPDATE_SQUAWK", std::bind(&MessageHandler::UpdateSquawk, &messageHandler, std::placeholders::_1));
-	socketClient.socket()->on("NEW_FLIGHT_PLAN", std::bind(&MessageHandler::HandleNewFlightPlan, &messageHandler, std::placeholders::_1));
-	socketClient.socket()->on("UPDATE_POSITIONS", std::bind(&MessageHandler::UpdatePositions, &messageHandler, std::placeholders::_1));
-	socketClient.socket()->on("SEND_PDC", std::bind(&MessageHandler::SendPDC, &messageHandler, std::placeholders::_1));
-	socketClient.socket()->on("HANDOFF_TARGET", std::bind(&MessageHandler::HandoffTarget, &messageHandler, std::placeholders::_1));
-	socketClient.socket()->on("REFUSE_HANDOFF", std::bind(&MessageHandler::RefuseHandoff, &messageHandler, std::placeholders::_1));
-	socketClient.socket()->on("ACCEPT_HANDOFF", std::bind(&MessageHandler::AcceptHandoff, &messageHandler, std::placeholders::_1));
-	socketClient.socket()->on("REFUSE_COORD", std::bind(&MessageHandler::RefuseCoordination, &messageHandler, std::placeholders::_1));
-	socketClient.socket()->on("ACCEPT_COORD", std::bind(&MessageHandler::AcceptCoordination, &messageHandler, std::placeholders::_1));
-	socketClient.socket()->on("CORRELATE_TARGET", std::bind(&MessageHandler::CorrelateTarget, &messageHandler, std::placeholders::_1));
-	socketClient.socket()->on("DECORRELATE_TARGET", std::bind(&MessageHandler::DecorrelateTarget, &messageHandler, std::placeholders::_1));
-	socketClient.socket()->on("UPDATE_ANNOTATION", std::bind(&MessageHandler::UpdateAnnotation, &messageHandler, std::placeholders::_1));
-	socketClient.socket()->on("SEND_RAW_MESSAGE", std::bind(&MessageHandler::SendRawTextMessage, &messageHandler, std::placeholders::_1));
-	socketClient.socket()->on("SEND_FREQ_MESSAGE", std::bind(&MessageHandler::SendFrequencyMessage, &messageHandler, std::placeholders::_1));
-	socketClient.socket()->on("UPDATE_AIRCRAFT_STATE", std::bind(&MessageHandler::UpdateAircraftState, &messageHandler, std::placeholders::_1));
-	socketClient.socket()->on("PUSH_FLIGHT_STRIP", std::bind(&MessageHandler::PushFlightStrip, &messageHandler, std::placeholders::_1));
-	socketClient.socket()->on("UPDATE_COMM_TYPE", std::bind(&MessageHandler::UpdateCommuncationType, &messageHandler, std::placeholders::_1));
-	socketClient.socket()->on("SYNC_ANNOTATIONS", std::bind(&MessageHandler::SyncAnnotations, &messageHandler, std::placeholders::_1));
-	socketClient.socket()->on("INITIATE_COORDINATION", std::bind(&MessageHandler::InitiateCoordination, &messageHandler, std::placeholders::_1));
+	sock->on("UPDATE_TIME", std::bind(&MessageHandler::UpdateTime, &_messageHandler, std::placeholders::_1));
+	sock->on("UPDATE_DEPARTURE_TIME", std::bind(&MessageHandler::UpdateDepartureTime, &_messageHandler, std::placeholders::_1));
+	sock->on("UPDATE_SPEED", std::bind(&MessageHandler::UpdateSpeed, &_messageHandler, std::placeholders::_1));
+	sock->on("UPDATE_STATUS", std::bind(&MessageHandler::UpdateAircraftStatus, &_messageHandler, std::placeholders::_1));
+	sock->on("UPDATE_TRACKING_STATUS", std::bind(&MessageHandler::UpdateTrackingStatus, &_messageHandler, std::placeholders::_1));
+	sock->on("UPDATE_DIRECT", std::bind(&MessageHandler::UpdateDirectTo, &_messageHandler, std::placeholders::_1));
+	sock->on("UPDATE_FLIGHT_PLAN", std::bind(&MessageHandler::UpdateFlightPlan, &_messageHandler, std::placeholders::_1));
+	sock->on("UPDATE_ROUTE", std::bind(&MessageHandler::UpdateRoute, &_messageHandler, std::placeholders::_1));
+	sock->on("UPDATE_SQUAWK", std::bind(&MessageHandler::UpdateSquawk, &_messageHandler, std::placeholders::_1));
+	sock->on("NEW_FLIGHT_PLAN", std::bind(&MessageHandler::HandleNewFlightPlan, &_messageHandler, std::placeholders::_1));
+	sock->on("UPDATE_POSITIONS", std::bind(&MessageHandler::UpdatePositions, &_messageHandler, std::placeholders::_1));
+	sock->on("SEND_PDC", std::bind(&MessageHandler::SendPDC, &_messageHandler, std::placeholders::_1));
+	sock->on("HANDOFF_TARGET", std::bind(&MessageHandler::HandoffTarget, &_messageHandler, std::placeholders::_1));
+	sock->on("REFUSE_HANDOFF", std::bind(&MessageHandler::RefuseHandoff, &_messageHandler, std::placeholders::_1));
+	sock->on("ACCEPT_HANDOFF", std::bind(&MessageHandler::AcceptHandoff, &_messageHandler, std::placeholders::_1));
+	sock->on("REFUSE_COORD", std::bind(&MessageHandler::RefuseCoordination, &_messageHandler, std::placeholders::_1));
+	sock->on("ACCEPT_COORD", std::bind(&MessageHandler::AcceptCoordination, &_messageHandler, std::placeholders::_1));
+	sock->on("CORRELATE_TARGET", std::bind(&MessageHandler::CorrelateTarget, &_messageHandler, std::placeholders::_1));
+	sock->on("DECORRELATE_TARGET", std::bind(&MessageHandler::DecorrelateTarget, &_messageHandler, std::placeholders::_1));
+	sock->on("UPDATE_ANNOTATION", std::bind(&MessageHandler::UpdateAnnotation, &_messageHandler, std::placeholders::_1));
+	sock->on("SEND_RAW_MESSAGE", std::bind(&MessageHandler::SendRawTextMessage, &_messageHandler, std::placeholders::_1));
+	sock->on("SEND_FREQ_MESSAGE", std::bind(&MessageHandler::SendFrequencyMessage, &_messageHandler, std::placeholders::_1));
+	sock->on("UPDATE_AIRCRAFT_STATE", std::bind(&MessageHandler::UpdateAircraftState, &_messageHandler, std::placeholders::_1));
+	sock->on("PUSH_FLIGHT_STRIP", std::bind(&MessageHandler::PushFlightStrip, &_messageHandler, std::placeholders::_1));
+	sock->on("UPDATE_COMM_TYPE", std::bind(&MessageHandler::UpdateCommuncationType, &_messageHandler, std::placeholders::_1));
+	sock->on("SYNC_ANNOTATIONS", std::bind(&MessageHandler::SyncAnnotations, &_messageHandler, std::placeholders::_1));
+	sock->on("INITIATE_COORDINATION", std::bind(&MessageHandler::InitiateCoordination, &_messageHandler, std::placeholders::_1));
 
 	// EXCDS information requests
-	socketClient.socket()->on("REQUEST_ALL_FP_DATA", std::bind(&MessageHandler::RequestAllAircraft, &messageHandler, std::placeholders::_1));
-	socketClient.socket()->on("REQUEST_FP_DATA_CALLSIGN", std::bind(&MessageHandler::RequestAircraftByCallsign, &messageHandler, std::placeholders::_1));
-	socketClient.socket()->on("REQUEST_MAP_DATA", std::bind(&MessageHandler::RequestSectorData, &messageHandler, std::placeholders::_1));
+	sock->on("REQUEST_ALL_FP_DATA", std::bind(&MessageHandler::RequestAllAircraft, &_messageHandler, std::placeholders::_1));
+	sock->on("REQUEST_FP_DATA_CALLSIGN", std::bind(&MessageHandler::RequestAircraftByCallsign, &_messageHandler, std::placeholders::_1));
 }
 
 void CEXCDSBridge::OnTimer(int counter)
 {
 	if (counter % 5 != 0) return;
+
+	ensure_socket_connected();
+	if (!socketClient.opened()) {
+		return;
+	}
 
 	CEXCDSBridge* bridgeInstance = CEXCDSBridge::GetInstance();
 

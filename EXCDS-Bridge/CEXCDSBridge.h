@@ -3,6 +3,7 @@
 #include "EuroScopePlugIn.h"
 
 #include "Response/ExcdsResponse.h"
+#include "MessageHandler.h"
 
 class CEXCDSBridge : public EuroScopePlugIn::CPlugIn
 {
@@ -30,4 +31,7 @@ public:
     void OnControllerDisconnect(EuroScopePlugIn::CController controller);
 private:
     void bind_events();
+    void ensure_socket_connected();
+
+    MessageHandler _messageHandler;
 };

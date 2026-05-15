@@ -1,6 +1,8 @@
 #include "ExcdsEvent.h"
 #include "EuroScopePlugIn.h"
 
+extern sio::client socketClient;
+
 std::string ExcdsEvent::GetCallsign(sio::event& event)
 {
     return event.get_message()->get_map()["callsign"]->get_string();
@@ -16,6 +18,24 @@ void ExcdsEvent::SendNotModified(sio::event& event, std::string reason)
     _response->get_map()["modified"] = sio::bool_message::create(false);
     _response->get_map()["message"] = sio::string_message::create(reason);
     event.put_ack_message(_response);
+
+    if (_bridgeInstance && socketClient.opened()) {
+        sio::socket::ptr sock = _bridgeInstance->GetSocket();
+        if (sock) {
+            sio::message::ptr logPayload = sio::object_message::create();
+            std::string callsign;
+            try {
+                callsign = GetCallsign(event);
+            }
+            catch (...) {
+                callsign = "";
+            }
+            logPayload->get_map()["callsign"] = sio::string_message::create(callsign);
+            logPayload->get_map()["event"] = sio::string_message::create(event.get_name());
+            logPayload->get_map()["message"] = sio::string_message::create(reason);
+            sock->emit("BRIDGE_COMMAND_REJECTED", logPayload);
+        }
+    }
 }
 
 void ExcdsEvent::SendModified(sio::event& event)
