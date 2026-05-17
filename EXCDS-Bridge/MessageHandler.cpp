@@ -738,18 +738,25 @@ void MessageHandler::UpdateSpeed(sio::event& e)
 			return;
 		}
 
-		// Assign either a speed or mach, if provided
 		bool isAssigned = false;
+		auto& controllerData = fp.GetControllerAssignedData();
+
 		if (assignedMach > 0) {
-			isAssigned = fp.GetControllerAssignedData().SetAssignedMach(assignedMach);
+			isAssigned = controllerData.SetAssignedMach(assignedMach);
 		}
 		else if (assignedSpeed > 0) {
-			isAssigned = fp.GetControllerAssignedData().SetAssignedSpeed(assignedSpeed);
+			isAssigned = controllerData.SetAssignedSpeed(assignedSpeed);
+		}
+		else {
+			// Clear assigned speed/mach (RESUME, MCS, BFS)
+			bool clearedSpeed = controllerData.SetAssignedSpeed(0);
+			bool clearedMach = controllerData.SetAssignedMach(0);
+			isAssigned = clearedSpeed || clearedMach;
 		}
 
 		// Assign the filed speed, if provided
 		if (filedSpeed > 0) {
-			isAssigned = fp.GetFlightPlanData().SetTrueAirspeed(filedSpeed);
+			isAssigned = fp.GetFlightPlanData().SetTrueAirspeed(filedSpeed) || isAssigned;
 		}
 
 		if (!isAssigned) {
@@ -2106,16 +2113,17 @@ void MessageHandler::PrepareFlightPlanDataResponse(EuroScopePlugIn::CFlightPlan 
 
 		const char* groundStatus = fp.GetGroundState();
 		bool cleared = fp.GetClearenceFlag();
-		if (strcmp(groundStatus, "ARR") == 0)
+		const char* scratchPad = fp.GetControllerAssignedData().GetScratchPadString();
+		if (strcmp(scratchPad, "RREL ") == 0 || strcmp(scratchPad, "RREL") == 0)
+			excdsGroundStatus = "TXRL";
+		else if (strcmp(scratchPad, "RREQ ") == 0 || strcmp(scratchPad, "RREQ") == 0)
+			excdsGroundStatus = "TXRQ";
+		else if (strcmp(groundStatus, "ARR") == 0)
 			excdsGroundStatus = "ARR";
 		else if (strcmp(groundStatus, "TXIN") == 0)
 			excdsGroundStatus = "TXIN";
 		else if (strcmp(groundStatus, "PARK") == 0)
 			excdsGroundStatus = "PARK";
-		else if (strcmp(fp.GetControllerAssignedData().GetScratchPadString(), "RREL") == 0)
-			excdsGroundStatus = "TXRL";
-		else if (strcmp(fp.GetControllerAssignedData().GetScratchPadString(), "RREQ") == 0)
-			excdsGroundStatus = "TXRQ";
 		else if (strcmp(groundStatus, "TAXI") == 0)
 			excdsGroundStatus = "TAXI";
 		else if (strcmp(groundStatus, "PUSH") == 0)
@@ -2587,7 +2595,7 @@ bool MessageHandler::StatusAssign(std::string status, EuroScopePlugIn::CFlightPl
 		else if (strcmp(status.c_str(), "TXRQ") == 0)
 		{
 			success = fp.GetControllerAssignedData().SetScratchPadString("TAXI");
-			success = fp.GetControllerAssignedData().SetScratchPadString("RREQ");
+			success = fp.GetControllerAssignedData().SetScratchPadString("RREQ ");
 		}
 		else if (strcmp(status.c_str(), "TXRL") == 0)
 		{
@@ -2600,7 +2608,7 @@ bool MessageHandler::StatusAssign(std::string status, EuroScopePlugIn::CFlightPl
 			if (CEXCDSBridge::GetInstance()->ControllerMyself().GetFacility() > 1 && CEXCDSBridge::GetInstance()->ControllerMyself().GetFacility() < 5)
 				return false;
 
-			success = fp.GetControllerAssignedData().SetScratchPadString("RREL");
+			success = fp.GetControllerAssignedData().SetScratchPadString("RREL ");
 		}
 		else if (strcmp(status.c_str(), "DEPA") == 0)
 		{
