@@ -34,4 +34,5 @@ private:
     void ensure_socket_connected();
 
     MessageHandler _messageHandler;
+    bool _eventsBound = false;
 };

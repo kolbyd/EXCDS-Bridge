@@ -12,12 +12,13 @@
 #include "Events/ScratchpadUpdateEvent.h"
 
 #define PLUGIN_NAME		"EXCDS Bridge"
-#define PLUGIN_VERSION	"1.1.4-beta"
+#define PLUGIN_VERSION	"1.1.5-beta"
 #define PLUGIN_AUTHOR	"Kolby Dunning / Liam Shaw"
 #define PLUGIN_LICENSE	"Attribution-ShareAlike 4.0 International (CC BY-SA 4.0)"
 
 const std::string BRIDGE_HOST = "http://127.0.0.1";
 const std::string BRIDGE_PORT = "7501";
+constexpr int BRIDGE_FP_SWEEP_SECONDS = 5;
 
 // The socket connection between the EXCDS program and EuroScope
 sio::client socketClient;
@@ -45,13 +46,18 @@ CEXCDSBridge::CEXCDSBridge() :
 
 	socketClient.set_open_listener([this]() {
 		AFX_MANAGE_STATE(AfxGetStaticModuleState());
+		bind_events();
 		if (socketClient.socket()) {
 			socketClient.socket()->emit("CONNECTED", sio::message::list("true"));
 		}
 	});
 
+	socketClient.set_close_listener([this](sio::client::close_reason const&) {
+		AFX_MANAGE_STATE(AfxGetStaticModuleState());
+		_eventsBound = false;
+	});
+
 	ensure_socket_connected();
-	bind_events();
 }
 
 void CEXCDSBridge::ensure_socket_connected()
@@ -72,9 +78,12 @@ CEXCDSBridge::~CEXCDSBridge()
 {
 	AFX_MANAGE_STATE(AfxGetStaticModuleState());
 
-	// Cleanup socket
-	socketClient.socket()->emit("CONNECTED", sio::message::list("false"));
-	socketClient.socket()->off_all();
+	sio::socket::ptr sock = socketClient.socket();
+	if (sock) {
+		sock->emit("CONNECTED", sio::message::list("false"));
+		sock->off_all();
+	}
+	_eventsBound = false;
 	socketClient.close();
 }
 
@@ -84,6 +93,10 @@ void CEXCDSBridge::bind_events()
 	if (!sock) {
 		return;
 	}
+
+	// Re-bind after reconnect; off_all clears handlers from any prior socket instance.
+	sock->off_all();
+	_eventsBound = false;
 
 	// Messages FROM EXCDS, to update aircraft in EuroScope
 	(new AltitudeUpdateEvent())->RegisterEvent("UPDATE_ALTITUDE");
@@ -120,15 +133,21 @@ void CEXCDSBridge::bind_events()
 	// EXCDS information requests
 	sock->on("REQUEST_ALL_FP_DATA", std::bind(&MessageHandler::RequestAllAircraft, &_messageHandler, std::placeholders::_1));
 	sock->on("REQUEST_FP_DATA_CALLSIGN", std::bind(&MessageHandler::RequestAircraftByCallsign, &_messageHandler, std::placeholders::_1));
+
+	_eventsBound = true;
 }
 
 void CEXCDSBridge::OnTimer(int counter)
 {
-	if (counter % 5 != 0) return;
+	if (counter % BRIDGE_FP_SWEEP_SECONDS != 0) return;
 
 	ensure_socket_connected();
 	if (!socketClient.opened()) {
 		return;
+	}
+
+	if (!_eventsBound) {
+		bind_events();
 	}
 
 	CEXCDSBridge* bridgeInstance = CEXCDSBridge::GetInstance();
@@ -202,7 +221,12 @@ void CEXCDSBridge::OnTimer(int counter)
 
 		// Create a new object message and store it
 		sio::message::ptr msg = sio::object_message::create();
-		MessageHandler::PrepareFlightPlanDataResponse(flightPlan, msg, false);
+		// Periodic sweep (every 5s) includes full route/points for sector times from EuroScope.
+		if (!MessageHandler::PrepareFlightPlanDataResponse(flightPlan, msg, true)) {
+			flightPlan = bridgeInstance->FlightPlanSelectNext(flightPlan);
+			continue;
+		}
+		MessageHandler::AppendFlightPlanEsTracking(flightPlan, msg);
 
 		arrayMessage->get_vector().push_back(msg);
 
@@ -241,65 +265,21 @@ void CEXCDSBridge::OnFlightPlanControllerAssignedDataUpdate(EuroScopePlugIn::CFl
 {
 	if (fp.GetState() == EuroScopePlugIn::FLIGHT_PLAN_STATE_NON_CONCERNED) return;
 
-	sio::message::ptr response = sio::object_message::create();
-	CEXCDSBridge* bridgeInstance = CEXCDSBridge::GetInstance();
-	MessageHandler::PrepareFlightPlanDataResponse(fp, response, false);
-
-	bridgeInstance->GetSocket()->emit("SEND_FP_DATA", response);
-	EuroScopePlugIn::CRadarTarget rt = bridgeInstance->RadarTargetSelect(fp.GetCallsign());
-
-	if (rt.IsValid())
-	{
-		sio::message::ptr rtresponse = sio::object_message::create();
-		MessageHandler::PrepareRadarTargetResponse(rt, rtresponse);
-
-		bridgeInstance->GetSocket()->emit("SEND_RT_DATA", rtresponse);
-	}
+	MessageHandler::EmitFlightPlanPatch(fp, "FP_CTRL_UPDATE", Datatype);
 }
 
 void CEXCDSBridge::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan fp)
 {
 	if (fp.GetState() == EuroScopePlugIn::FLIGHT_PLAN_STATE_NON_CONCERNED) return;
 
-	sio::message::ptr response = sio::object_message::create();
-	CEXCDSBridge* bridgeInstance = CEXCDSBridge::GetInstance();
-	MessageHandler::PrepareFlightPlanDataResponse(fp, response, false);
-
-	bridgeInstance->GetSocket()->emit("SEND_FP_DATA", response);
-	EuroScopePlugIn::CRadarTarget rt = bridgeInstance->RadarTargetSelect(fp.GetCallsign());
-
-	if (rt.IsValid())
-	{
-		sio::message::ptr rtresponse = sio::object_message::create();
-		MessageHandler::PrepareRadarTargetResponse(rt, rtresponse);
-
-		bridgeInstance->GetSocket()->emit("SEND_RT_DATA", rtresponse);
-	}
+	MessageHandler::EmitFlightPlanPatch(fp, "FP_PLAN_UPDATE");
 }
 
 void CEXCDSBridge::OnFlightPlanFlightStripPushed(
 	EuroScopePlugIn::CFlightPlan fp,
 	const char* sSenderController
 ) {
-	sio::message::ptr response = sio::object_message::create();
-	CEXCDSBridge* bridgeInstance = CEXCDSBridge::GetInstance();
-	MessageHandler::PrepareFlightPlanDataResponse(fp, response, false);
-
-	response->get_map()["pushed_by"] = sio::string_message::create(sSenderController);
-	if (fp.GetCorrelatedRadarTarget().IsValid()) {
-		response->get_map()["target_id"] = sio::string_message::create(fp.GetCorrelatedRadarTarget().GetSystemID());
-	}
-
-	bridgeInstance->GetSocket()->emit("SEND_FP_DATA", response);
-	EuroScopePlugIn::CRadarTarget rt = bridgeInstance->RadarTargetSelect(fp.GetCallsign());
-
-	if (rt.IsValid())
-	{
-		sio::message::ptr rtresponse = sio::object_message::create();
-		MessageHandler::PrepareRadarTargetResponse(rt, rtresponse);
-
-		bridgeInstance->GetSocket()->emit("SEND_RT_DATA", rtresponse);
-	}
+	MessageHandler::EmitFlightPlanPatch(fp, "FP_STRIP_PUSHED", -1, sSenderController, nullptr);
 }
 
 void CEXCDSBridge::OnPlaneInformationUpdate(const char* sCallsign,
@@ -320,7 +300,7 @@ void CEXCDSBridge::OnPlaneInformationUpdate(const char* sCallsign,
 void CEXCDSBridge::OnRadarTargetPositionUpdate(EuroScopePlugIn::CRadarTarget rt)
 {
 	sio::message::ptr response = sio::object_message::create();
-	MessageHandler::PrepareRadarTargetResponse(rt, response);
+	MessageHandler::PrepareRadarTargetPositionResponse(rt, response);
 
 	CEXCDSBridge* bridgeInstance = CEXCDSBridge::GetInstance();
 	bridgeInstance->GetSocket()->emit("SEND_RT_POS_UPDATE_DATA", response);

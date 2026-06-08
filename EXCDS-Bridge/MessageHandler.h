@@ -29,7 +29,6 @@ public:
 	void UpdateAircraftStatus(sio::event&);
 	void UpdateTrackingStatus(sio::event&);
 	void PushFlightStrip(sio::event& e);
-	void PointoutTarget(sio::event& e);
 	void UpdateAnnotation(sio::event& e);
 	void UpdateSquawk(sio::event& e);
 	void UpdateEstimate(sio::event&);
@@ -41,8 +40,11 @@ public:
 	static void RequestAirports(sio::message::ptr response);
 	void RequestAllAircraft(sio::event&);
 	void RequestAircraftByCallsign(sio::event&);
-	static void PrepareFlightPlanDataResponse(EuroScopePlugIn::CFlightPlan fp, sio::message::ptr response, boolean full);
+	static bool PrepareFlightPlanDataResponse(EuroScopePlugIn::CFlightPlan fp, sio::message::ptr response, boolean full);
 	static void PrepareRadarTargetResponse(EuroScopePlugIn::CRadarTarget rt, sio::message::ptr response);
+	static void PrepareRadarTargetPositionResponse(EuroScopePlugIn::CRadarTarget rt, sio::message::ptr response);
+	static void AppendFlightPlanEsTracking(EuroScopePlugIn::CFlightPlan fp, sio::message::ptr response);
+	static void EmitFlightPlanPatch(EuroScopePlugIn::CFlightPlan fp, const char* eventName, int controllerDataType = -1, const char* pushedBy = nullptr, const char* pushedTo = nullptr);
 	void RequestDirectTo(sio::event&);
 
 private:
