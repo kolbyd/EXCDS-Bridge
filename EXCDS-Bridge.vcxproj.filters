@@ -30,6 +30,9 @@
     <ClCompile Include="socket.io-client-cpp\src\internal\sio_packet.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="EXCDS-Bridge\AircraftInfoParser.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="EXCDS-Bridge\ApiHelper.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -77,6 +80,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="socket.io-client-cpp\src\internal\sio_packet.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="EXCDS-Bridge\AircraftInfoParser.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="EXCDS-Bridge\ApiHelper.h">

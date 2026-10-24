@@ -196,6 +196,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="EXCDS-Bridge.cpp" />
+    <ClCompile Include="EXCDS-Bridge\AircraftInfoParser.cpp" />
     <ClCompile Include="EXCDS-Bridge\ApiHelper.cpp" />
     <ClCompile Include="EXCDS-Bridge\CEXCDSBridge.cpp" />
     <ClCompile Include="EXCDS-Bridge\Events\AltitudeUpdateEvent.cpp" />
@@ -215,6 +216,7 @@
   <ItemGroup>
     <ClInclude Include="euroscope\EuroScopePlugIn.h" />
     <ClInclude Include="EXCDS-Bridge.h" />
+    <ClInclude Include="EXCDS-Bridge\AircraftInfoParser.h" />
     <ClInclude Include="EXCDS-Bridge\ApiHelper.h" />
     <ClInclude Include="EXCDS-Bridge\CEXCDSBridge.h" />
     <ClInclude Include="EXCDS-Bridge\Events\AltitudeUpdateEvent.h" />

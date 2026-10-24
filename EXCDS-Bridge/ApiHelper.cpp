@@ -61,10 +61,30 @@ double ApiHelper::SafeDouble(double v)
 
 sio::message::ptr ApiHelper::SafeStringMessage(const char* src)
 {
-	return sio::string_message::create(SafeString(src));
+	return sio::string_message::create(ApiHelper::SafeString(src));
 }
 
 sio::message::ptr ApiHelper::SafeStringMessage(const std::string& src)
 {
-	return sio::string_message::create(ToASCII(src));
+	return sio::string_message::create(ApiHelper::ToASCII(src));
+}
+
+std::string ApiHelper::PipeField(const std::string& src, size_t index)
+{
+	size_t start = 0;
+	size_t field = 0;
+	while (true) {
+		const size_t pipe = src.find('|', start);
+		if (field == index) {
+			if (pipe == std::string::npos) {
+				return src.substr(start);
+			}
+			return src.substr(start, pipe - start);
+		}
+		if (pipe == std::string::npos) {
+			return "";
+		}
+		start = pipe + 1;
+		++field;
+	}
 }

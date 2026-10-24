@@ -133,6 +133,7 @@ void CEXCDSBridge::bind_events()
 	// EXCDS information requests
 	sock->on("REQUEST_ALL_FP_DATA", std::bind(&MessageHandler::RequestAllAircraft, &_messageHandler, std::placeholders::_1));
 	sock->on("REQUEST_FP_DATA_CALLSIGN", std::bind(&MessageHandler::RequestAircraftByCallsign, &_messageHandler, std::placeholders::_1));
+	sock->on("REQUEST_FP_DATA_DESTINATION", std::bind(&MessageHandler::RequestAircraftByDestination, &_messageHandler, std::placeholders::_1));
 
 	_eventsBound = true;
 }
@@ -205,16 +206,13 @@ void CEXCDSBridge::OnTimer(int counter)
 	EuroScopePlugIn::CFlightPlan flightPlan = bridgeInstance->FlightPlanSelectFirst();
 
 	// @see https://github.com/socketio/socket.io-client-cpp/issues/263
-	// Iterate over all the flight plans ES has
+	// Iterate over all the flight plans ES has.
+	// Tower and below keep state 0: EuroScope never promotes those plans when someone above is online.
+	const bool sendAll = MessageHandler::SendsAllFlightPlans();
 	sio::message::ptr arrayMessage = sio::array_message::create();
 
-	const EuroScopePlugIn::CPosition center = me.GetPosition();
-
 	while (flightPlan.IsValid()) {
-		if (
-			(flightPlan.GetState() == 0 && me.GetFacility() > 5) ||
-			!bridgeInstance->RadarTargetSelect(flightPlan.GetCallsign()).IsValid()
-		) {
+		if (flightPlan.GetState() == 0 && !sendAll) {
 			flightPlan = bridgeInstance->FlightPlanSelectNext(flightPlan);
 			continue;
 		}
@@ -263,14 +261,14 @@ void CEXCDSBridge::OnTimer(int counter)
 
 void CEXCDSBridge::OnFlightPlanControllerAssignedDataUpdate(EuroScopePlugIn::CFlightPlan fp, int Datatype)
 {
-	if (fp.GetState() == EuroScopePlugIn::FLIGHT_PLAN_STATE_NON_CONCERNED) return;
+	if (fp.GetState() == EuroScopePlugIn::FLIGHT_PLAN_STATE_NON_CONCERNED && !MessageHandler::SendsAllFlightPlans()) return;
 
 	MessageHandler::EmitFlightPlanPatch(fp, "FP_CTRL_UPDATE", Datatype);
 }
 
 void CEXCDSBridge::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan fp)
 {
-	if (fp.GetState() == EuroScopePlugIn::FLIGHT_PLAN_STATE_NON_CONCERNED) return;
+	if (fp.GetState() == EuroScopePlugIn::FLIGHT_PLAN_STATE_NON_CONCERNED && !MessageHandler::SendsAllFlightPlans()) return;
 
 	MessageHandler::EmitFlightPlanPatch(fp, "FP_PLAN_UPDATE");
 }

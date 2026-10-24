@@ -1,9 +1,7 @@
 #pragma once
 #include <string>
 
-namespace sio {
-	class message;
-}
+#include "sio_message.h"
 
 class ApiHelper
 {
@@ -14,4 +12,6 @@ public:
 	static double SafeDouble(double v);
 	static sio::message::ptr SafeStringMessage(const char* src);
 	static sio::message::ptr SafeStringMessage(const std::string& src);
+	/** Zero-based pipe field from `a|b|c` (empty if missing). */
+	static std::string PipeField(const std::string& src, size_t index);
 };

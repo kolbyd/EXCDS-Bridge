@@ -40,7 +40,10 @@ public:
 	static void RequestAirports(sio::message::ptr response);
 	void RequestAllAircraft(sio::event&);
 	void RequestAircraftByCallsign(sio::event&);
+	void RequestAircraftByDestination(sio::event&);
 	static bool PrepareFlightPlanDataResponse(EuroScopePlugIn::CFlightPlan fp, sio::message::ptr response, boolean full);
+	// DEL (2), GND (3), and TWR (4) receive every flight plan, including tracking state 0.
+	static bool SendsAllFlightPlans();
 	static void PrepareRadarTargetResponse(EuroScopePlugIn::CRadarTarget rt, sio::message::ptr response);
 	static void PrepareRadarTargetPositionResponse(EuroScopePlugIn::CRadarTarget rt, sio::message::ptr response);
 	static void AppendFlightPlanEsTracking(EuroScopePlugIn::CFlightPlan fp, sio::message::ptr response);
