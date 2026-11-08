@@ -20,15 +20,29 @@
 #include "MessageHandler.h"
 
 #define ENTER 0x1c
+#define ESC 0x01
 #define NUMPAD_PLUS 0x4e
 #define BRACKET_CLOSE 0x1b
 
 using namespace sio;
 
+extern sio::client socketClient;
+
 namespace {
 	// Moved global to anonymous namespace for better encapsulation
 	typedef std::tuple<std::string, EuroScopePlugIn::CPosition> EstimatePosn;
 	std::vector<EstimatePosn> estimates;
+
+	// Phase delays so EuroScope can open/switch chat and reclaim the command line
+	constexpr DWORD kFocusSettleMs = 50;
+	constexpr DWORD kPostEscMs = 40;
+	constexpr DWORD kOpenChatMs = 250;
+	constexpr DWORD kPostSendMs = 100;
+
+	void SleepMs(DWORD ms)
+	{
+		Sleep(ms);
+	}
 
 	// Cache bridge instance to avoid repeated calls
 	CEXCDSBridge* GetBridgeInstance() {
@@ -40,6 +54,15 @@ namespace {
 	{
 		static std::mutex mutex;
 		return mutex;
+	}
+
+	// ESC twice: leave chat/dialog focus and clear leftover command-line text
+	void ReturnToCommandLine()
+	{
+		MessageHandler::SendKeyboardPresses({ ESC });
+		SleepMs(kPostEscMs);
+		MessageHandler::SendKeyboardPresses({ ESC });
+		SleepMs(kPostEscMs);
 	}
 
 	void ToggleCapsLock()
@@ -206,7 +229,10 @@ void MessageHandler::SendPDC(sio::event& e)
 		response->get_map()["callsign"] = string_message::create(callsign);
 
 		FocusEuroScopeWindow();
+		SleepMs(kFocusSettleMs);
 		CapsLockGuard capsGuard;
+
+		ReturnToCommandLine();
 
 		std::string pdcTarget;
 		pdcTarget.reserve(7 + callsign.length());
@@ -214,8 +240,11 @@ void MessageHandler::SendPDC(sio::event& e)
 
 		SendKeyboardString(pdcTarget);
 		SendKeyboardPresses({ ENTER });
+		SleepMs(kOpenChatMs); // Wait for private chat to open/focus before typing body
+
 		SendKeyboardString(value);
 		SendKeyboardPresses({ ENTER });
+		SleepMs(kPostSendMs);
 
 		response->get_map()["modified"] = bool_message::create(true);
 		e.put_ack_message(response);
@@ -239,12 +268,16 @@ void MessageHandler::SendFrequencyMessage(sio::event& e)
 		response->get_map()["callsign"] = string_message::create(callsign);
 
 		FocusEuroScopeWindow();
+		SleepMs(kFocusSettleMs);
 		CapsLockGuard capsGuard;
+
+		ReturnToCommandLine();
 
 		SendKeyboardString(callsign);
 		SendKeyboardPresses({ NUMPAD_PLUS, 0x0E }); // 0x0E is backspace
 		SendKeyboardString(value);
 		SendKeyboardPresses({ BRACKET_CLOSE });
+		SleepMs(kPostSendMs);
 
 		response->get_map()["modified"] = bool_message::create(true);
 		e.put_ack_message(response);
@@ -266,10 +299,14 @@ void MessageHandler::SendRawTextMessage(sio::event& e)
 		auto response = object_message::create();
 
 		FocusEuroScopeWindow();
+		SleepMs(kFocusSettleMs);
 		CapsLockGuard capsGuard;
+
+		ReturnToCommandLine();
 
 		SendKeyboardString(value);
 		SendKeyboardPresses({ ENTER });
+		SleepMs(kPostSendMs);
 
 		response->get_map()["modified"] = bool_message::create(true);
 		e.put_ack_message(response);
@@ -366,23 +403,103 @@ void MessageHandler::HandoffTarget(sio::event& e)
 	}
 }
 
+EuroScopePlugIn::CFlightPlan MessageHandler::ResolveFlightPlanByCallsign(const std::string& callsign)
+{
+	std::string normalized = callsign;
+	std::transform(normalized.begin(), normalized.end(), normalized.begin(),
+		[](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+
+	CEXCDSBridge* bridge = CEXCDSBridge::GetInstance();
+	EuroScopePlugIn::CFlightPlan fp = bridge->FlightPlanSelect(normalized.c_str());
+	if (fp.IsValid()) {
+		return fp;
+	}
+
+	EuroScopePlugIn::CRadarTarget rt = bridge->RadarTargetSelect(normalized.c_str());
+	if (rt.IsValid() && rt.GetCorrelatedFlightPlan().IsValid()) {
+		return rt.GetCorrelatedFlightPlan();
+	}
+
+	return fp;
+}
+
+bool MessageHandler::HandoffAcceptChecks(EuroScopePlugIn::CFlightPlan fp, sio::message::ptr response, sio::event& e)
+{
+	const std::string callsign = response->get_map()["callsign"]->get_string();
+
+	if (!fp.IsValid()) {
+		AckNotModifiedAndReject(e, response, "Flight plan not found.");
+		CEXCDSBridge::SendEuroscopeMessage(callsign.c_str(), "Cannot accept handoff.", "NO_FPLN");
+		return false;
+	}
+
+	CEXCDSBridge* bridge = CEXCDSBridge::GetInstance();
+	EuroScopePlugIn::CController me = bridge->ControllerMyself();
+	const std::string myCjs = me.IsValid() ? ApiHelper::SafeString(me.GetPositionId()) : "";
+	const std::string handoffTarget = ApiHelper::SafeString(fp.GetHandoffTargetControllerId());
+	const int state = fp.GetState();
+	const bool transferToMe =
+		state == EuroScopePlugIn::FLIGHT_PLAN_STATE_TRANSFER_TO_ME_INITIATED ||
+		(!myCjs.empty() && handoffTarget == myCjs);
+
+	if (!transferToMe) {
+		AckNotModifiedAndReject(e, response, "No inbound handoff to accept.");
+		CEXCDSBridge::SendEuroscopeMessage(callsign.c_str(), "Cannot accept handoff.", "NO_HO");
+		return false;
+	}
+
+	return true;
+}
+
+bool MessageHandler::HandoffRefuseChecks(EuroScopePlugIn::CFlightPlan fp, sio::message::ptr response, sio::event& e)
+{
+	const std::string callsign = response->get_map()["callsign"]->get_string();
+
+	if (!fp.IsValid()) {
+		AckNotModifiedAndReject(e, response, "Flight plan not found.");
+		CEXCDSBridge::SendEuroscopeMessage(callsign.c_str(), "Cannot refuse handoff.", "NO_FPLN");
+		return false;
+	}
+
+	const std::string handoffTarget = ApiHelper::SafeString(fp.GetHandoffTargetControllerId());
+	const int state = fp.GetState();
+	const bool activeHandoff =
+		state == EuroScopePlugIn::FLIGHT_PLAN_STATE_TRANSFER_TO_ME_INITIATED ||
+		state == EuroScopePlugIn::FLIGHT_PLAN_STATE_TRANSFER_FROM_ME_INITIATED ||
+		!handoffTarget.empty();
+
+	if (!activeHandoff) {
+		AckNotModifiedAndReject(e, response, "No active handoff to refuse.");
+		CEXCDSBridge::SendEuroscopeMessage(callsign.c_str(), "Cannot refuse handoff.", "NO_HO");
+		return false;
+	}
+
+	return true;
+}
+
 void MessageHandler::RefuseHandoff(sio::event& e)
 {
 	try {
-		// Get aircraft data from EXCDS
 		std::string callsign = e.get_message()->get_map()["callsign"]->get_string();
-
-		EuroScopePlugIn::CFlightPlan fp = CEXCDSBridge::GetInstance()->FlightPlanSelect(callsign.c_str());
+		std::transform(callsign.begin(), callsign.end(), callsign.begin(),
+			[](unsigned char c) { return static_cast<char>(std::toupper(c)); });
 
 		auto response = object_message::create();
 		response->get_map()["callsign"] = string_message::create(callsign);
 
-		// Is the flight plan valid?
-		if (!fp.IsValid()) {
+		EuroScopePlugIn::CFlightPlan fp = ResolveFlightPlanByCallsign(callsign);
+		if (!HandoffRefuseChecks(fp, response, e)) {
 			return;
 		}
 
 		fp.RefuseHandoff();
+		response->get_map()["modified"] = bool_message::create(true);
+		e.put_ack_message(response);
+
+		EuroScopePlugIn::CFlightPlan updated = ResolveFlightPlanByCallsign(callsign);
+		if (updated.IsValid()) {
+			EmitFlightPlanPatch(updated, "FP_CTRL_UPDATE");
+		}
 	}
 	catch (...) {
 		OutputDebugString("EXCDS Error: Refuse handoff error");
@@ -392,20 +509,27 @@ void MessageHandler::RefuseHandoff(sio::event& e)
 void MessageHandler::AcceptHandoff(sio::event& e)
 {
 	try {
-		// Get aircraft data from EXCDS
 		std::string callsign = e.get_message()->get_map()["callsign"]->get_string();
-
-		EuroScopePlugIn::CFlightPlan fp = CEXCDSBridge::GetInstance()->FlightPlanSelect(callsign.c_str());
+		std::transform(callsign.begin(), callsign.end(), callsign.begin(),
+			[](unsigned char c) { return static_cast<char>(std::toupper(c)); });
 
 		auto response = object_message::create();
 		response->get_map()["callsign"] = string_message::create(callsign);
 
-		// Is the flight plan valid?
-		if (!fp.IsValid()) {
+		EuroScopePlugIn::CFlightPlan fp = ResolveFlightPlanByCallsign(callsign);
+		if (!HandoffAcceptChecks(fp, response, e)) {
 			return;
 		}
 
 		fp.AcceptHandoff();
+		response->get_map()["modified"] = bool_message::create(true);
+		e.put_ack_message(response);
+
+		// Re-select so the patch reflects post-accept ownership / cleared HO.
+		EuroScopePlugIn::CFlightPlan updated = ResolveFlightPlanByCallsign(callsign);
+		if (updated.IsValid()) {
+			EmitFlightPlanPatch(updated, "FP_CTRL_UPDATE");
+		}
 	}
 	catch (...) {
 		OutputDebugString("EXCDS Error: Accept handoff error");
@@ -991,11 +1115,34 @@ void MessageHandler::UpdateTrackingStatus(sio::event& e)
 			isAssigned = fp.EndTracking();
 
 		if (!isAssigned) {
-			e.put_ack_message(NotModified(response, "Unknown reason."));
-
+			AckNotModifiedAndReject(e, response, "Unknown reason.");
 			CEXCDSBridge::SendEuroscopeMessage(callsign.c_str(), "Cannot modify.", "UNKNOWN");
 			return;
 		}
+
+		// Re-read after Start/EndTracking — bool success can lag actual ownership.
+		fp = CEXCDSBridge::GetInstance()->FlightPlanSelect(callsign.c_str());
+		if (!fp.IsValid()) {
+			AckNotModifiedAndReject(e, response, "Flight plan not found after tracking change.");
+			CEXCDSBridge::SendEuroscopeMessage(callsign.c_str(), "Cannot modify.", "NO_FPLN");
+			return;
+		}
+
+		if (assumed) {
+			if (!fp.GetTrackingControllerIsMe()) {
+				AckNotModifiedAndReject(e, response, "StartTracking did not assign tracking to me.");
+				CEXCDSBridge::SendEuroscopeMessage(callsign.c_str(), "Cannot modify.", "UNKNOWN");
+				return;
+			}
+		}
+		else if (fp.GetTrackingControllerIsMe()) {
+			AckNotModifiedAndReject(e, response, "EndTracking did not release tracking.");
+			CEXCDSBridge::SendEuroscopeMessage(callsign.c_str(), "Cannot modify.", "UNKNOWN");
+			return;
+		}
+
+		// Push es_tracking immediately — no ES callback for ownership change.
+		EmitFlightPlanPatch(fp, "FP_CTRL_UPDATE");
 
 		// Tell EXCDS the change is done
 		response->get_map()["modified"] = bool_message::create(true);
@@ -1586,6 +1733,7 @@ void MessageHandler::PrepareRadarTargetResponse(EuroScopePlugIn::CRadarTarget rt
 		bool RVSM = false;
 		bool RNAV = false;
 		bool ident = false;
+		bool modeC = false;
 		bool VFR = false;
 		bool reachedAltitude = false;
 		std::string squawk = "0000";
@@ -1617,6 +1765,8 @@ void MessageHandler::PrepareRadarTargetResponse(EuroScopePlugIn::CRadarTarget rt
 
 			if (rt.GetPosition().GetTransponderI())
 				ident = true;
+
+			modeC = rt.GetPosition().GetTransponderC();
 
 			std::string transponderSquawk = rt.GetPosition().GetSquawk();
 			std::string fpSquawk = "";
@@ -1928,6 +2078,7 @@ void MessageHandler::PrepareRadarTargetResponse(EuroScopePlugIn::CRadarTarget rt
 		response->get_map()["mods"]->get_map()["blink"] = bool_message::create(hoBlink);
 		response->get_map()["mods"]->get_map()["vfr"] = bool_message::create(isVfr);
 		response->get_map()["mods"]->get_map()["ident"] = bool_message::create(ident);
+		response->get_map()["mods"]->get_map()["mode_c"] = bool_message::create(modeC);
 		response->get_map()["mods"]->get_map()["correlated"] = bool_message::create(isCorrelated);
 		response->get_map()["mods"]->get_map()["trackedByMe"] = bool_message::create(isTrackedByMe);
 		response->get_map()["mods"]->get_map()["ram"] = bool_message::create(ram);
@@ -1986,10 +2137,13 @@ void MessageHandler::AppendFlightPlanEsTracking(EuroScopePlugIn::CFlightPlan fp,
 		nextCjs = ApiHelper::SafeString(nextController.GetPositionId());
 	}
 
+	const std::string handoffCjs = ApiHelper::SafeString(fp.GetHandoffTargetControllerId());
+
 	response->get_map()["es_tracking"] = object_message::create();
 	response->get_map()["es_tracking"]->get_map()["controller_tracking_state"] = int_message::create(fp.GetState());
 	response->get_map()["es_tracking"]->get_map()["tracking_controller"] = string_message::create(trackingCjs);
 	response->get_map()["es_tracking"]->get_map()["next_controller"] = string_message::create(nextCjs);
+	response->get_map()["es_tracking"]->get_map()["handoff_controller"] = string_message::create(handoffCjs);
 }
 
 void MessageHandler::EmitFlightPlanPatch(
@@ -2083,6 +2237,7 @@ void MessageHandler::PrepareRadarTargetPositionResponse(EuroScopePlugIn::CRadarT
 		response->get_map()["mods"] = object_message::create();
 		response->get_map()["mods"]->get_map()["correlated"] = bool_message::create(isCorrelated);
 		response->get_map()["mods"]->get_map()["ident"] = bool_message::create(rt.GetPosition().GetTransponderI());
+		response->get_map()["mods"]->get_map()["mode_c"] = bool_message::create(rt.GetPosition().GetTransponderC());
 	}
 	catch (...) {
 		OutputDebugString("EXCDS Error: PrepareRadarTargetPositionResponse failed");
@@ -2376,6 +2531,8 @@ bool MessageHandler::PrepareFlightPlanDataResponse(EuroScopePlugIn::CFlightPlan 
 			std::string nextCtrlr = "";
 			if (nextController.IsValid()) nextCtrlr = ApiHelper::SafeString(nextController.GetPositionId());
 			response->get_map()["controllerData"]->get_map()["next_controller"] = string_message::create(nextCtrlr);
+			response->get_map()["controllerData"]->get_map()["handoff_controller"] =
+				string_message::create(ApiHelper::SafeString(fp.GetHandoffTargetControllerId()));
 
 			double frequency = 199.998;
 			if (!trackingCjs.empty()) {
@@ -2582,8 +2739,7 @@ bool MessageHandler::FlightPlanChecks(EuroScopePlugIn::CFlightPlan fp, message::
 		// Does the flight plan exist?
 		if (!fp.IsValid())
 		{
-			e.put_ack_message(NotModified(response, "Flight plan not found."));
-
+			AckNotModifiedAndReject(e, response, "Flight plan not found.");
 			CEXCDSBridge::SendEuroscopeMessage(response->get_map()["callsign"]->get_string().c_str(), "Cannot modify.", "NO_FPLN");
 			return false;
 		}
@@ -2591,8 +2747,7 @@ bool MessageHandler::FlightPlanChecks(EuroScopePlugIn::CFlightPlan fp, message::
 		// Are we allowed to modify this aircraft?
 		if (!fp.GetTrackingControllerIsMe() && strlen(fp.GetTrackingControllerId()) != 0)
 		{
-			e.put_ack_message(NotModified(response, "Aircraft is being tracked by another controller."));
-
+			AckNotModifiedAndReject(e, response, "Aircraft is being tracked by another controller.");
 			CEXCDSBridge::SendEuroscopeMessage(response->get_map()["callsign"]->get_string().c_str(), "Cannot modify.", "ALREADY_TRACKED");
 			return false;
 		}
@@ -2614,6 +2769,33 @@ message::ptr MessageHandler::NotModified(message::ptr response, std::string reas
 	response->get_map()["reason"] = string_message::create(reason);
 
 	return response;
+}
+
+void MessageHandler::EmitBridgeCommandRejected(sio::event& e, const std::string& reason)
+{
+	if (!socketClient.opened()) return;
+
+	sio::socket::ptr sock = CEXCDSBridge::GetInstance()->GetSocket();
+	if (!sock) return;
+
+	message::ptr logPayload = object_message::create();
+	std::string callsign;
+	try {
+		callsign = e.get_message()->get_map()["callsign"]->get_string();
+	}
+	catch (...) {
+		callsign = "";
+	}
+	logPayload->get_map()["callsign"] = string_message::create(callsign);
+	logPayload->get_map()["event"] = string_message::create(e.get_name());
+	logPayload->get_map()["message"] = string_message::create(reason);
+	sock->emit("BRIDGE_COMMAND_REJECTED", logPayload);
+}
+
+void MessageHandler::AckNotModifiedAndReject(sio::event& e, message::ptr response, const std::string& reason)
+{
+	e.put_ack_message(NotModified(response, reason));
+	EmitBridgeCommandRejected(e, reason);
 }
 
 /*
@@ -2933,32 +3115,26 @@ void MessageHandler::SendKeyboardPresses(const std::vector<WORD>& message)
 		return;
 	}
 
-	try {
-		std::vector<INPUT> vec;
-		vec.reserve(message.size() * 2); // Performance: Reserve capacity
+	std::vector<INPUT> vec;
+	vec.reserve(message.size() * 2);
 
-		for (const auto ch : message) {
-			INPUT input{};
-			input.type = INPUT_KEYBOARD;
-			input.ki.dwFlags = KEYEVENTF_SCANCODE;
-			input.ki.time = 0;
-			input.ki.wVk = 0;
-			input.ki.wScan = ch;
-			input.ki.dwExtraInfo = 1;
-			vec.push_back(input);
+	for (const auto ch : message) {
+		INPUT input{};
+		input.type = INPUT_KEYBOARD;
+		input.ki.dwFlags = KEYEVENTF_SCANCODE;
+		input.ki.time = 0;
+		input.ki.wVk = 0;
+		input.ki.wScan = ch;
+		input.ki.dwExtraInfo = 1;
+		vec.push_back(input);
 
-			input.ki.dwFlags |= KEYEVENTF_KEYUP;
-			vec.push_back(input);
-		}
-
-		const UINT result = SendInput(static_cast<UINT>(vec.size()), vec.data(), sizeof(INPUT));
-		if (result != vec.size()) {
-			OutputDebugString("Warning: Not all keyboard inputs were sent successfully");
-		}
+		input.ki.dwFlags |= KEYEVENTF_KEYUP;
+		vec.push_back(input);
 	}
-	catch (const std::exception& ex) {
-		const std::string errorMsg = "Keyboard Press Error: " + std::string(ex.what());
-		OutputDebugString(errorMsg.c_str());
+
+	const UINT result = SendInput(static_cast<UINT>(vec.size()), vec.data(), sizeof(INPUT));
+	if (result != vec.size()) {
+		throw std::runtime_error("Not all keyboard inputs were sent successfully");
 	}
 }
 
@@ -2968,29 +3144,23 @@ void MessageHandler::SendKeyboardString(const std::string& str)
 		return;
 	}
 
-	try {
-		std::vector<INPUT> vec;
-		vec.reserve(str.length() * 2);
+	std::vector<INPUT> vec;
+	vec.reserve(str.length() * 2);
 
-		for (const unsigned char ch : str) {
-			INPUT input{};
-			input.type = INPUT_KEYBOARD;
-			input.ki.wVk = 0;
-			input.ki.wScan = static_cast<WORD>(ch);
-			input.ki.dwFlags = KEYEVENTF_UNICODE;
-			vec.push_back(input);
+	for (const unsigned char ch : str) {
+		INPUT input{};
+		input.type = INPUT_KEYBOARD;
+		input.ki.wVk = 0;
+		input.ki.wScan = static_cast<WORD>(ch);
+		input.ki.dwFlags = KEYEVENTF_UNICODE;
+		vec.push_back(input);
 
-			input.ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
-			vec.push_back(input);
-		}
-
-		const UINT result = SendInput(static_cast<UINT>(vec.size()), vec.data(), sizeof(INPUT));
-		if (result != vec.size()) {
-			OutputDebugString("Warning: Not all keyboard string inputs were sent successfully");
-		}
+		input.ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
+		vec.push_back(input);
 	}
-	catch (const std::exception& ex) {
-		const std::string errorMsg = "Keyboard String Error: " + std::string(ex.what());
-		OutputDebugString(errorMsg.c_str());
+
+	const UINT result = SendInput(static_cast<UINT>(vec.size()), vec.data(), sizeof(INPUT));
+	if (result != vec.size()) {
+		throw std::runtime_error("Not all keyboard string inputs were sent successfully");
 	}
 }

@@ -7,8 +7,8 @@ public:
 	void UpdateAltitude(sio::event&);
 	void InitiateCoordination(sio::event& e);
 	void UpdatePositions(sio::event& e);
-	void SendKeyboardPresses(const std::vector<WORD>& message);
-	void SendKeyboardString(const std::string& str);
+	static void SendKeyboardPresses(const std::vector<WORD>& message);
+	static void SendKeyboardString(const std::string& str);
 	void SendPDC(sio::event& e);
 	void SendFrequencyMessage(sio::event& e);
 	void SendRawTextMessage(sio::event& e);
@@ -51,8 +51,13 @@ public:
 	void RequestDirectTo(sio::event&);
 
 private:
-	bool MessageHandler::FlightPlanChecks(EuroScopePlugIn::CFlightPlan fp, sio::message::ptr response, sio::event& e);
+	bool FlightPlanChecks(EuroScopePlugIn::CFlightPlan fp, sio::message::ptr response, sio::event& e);
 	sio::message::ptr NotModified(sio::message::ptr response, std::string reason);
+	void EmitBridgeCommandRejected(sio::event& e, const std::string& reason);
+	void AckNotModifiedAndReject(sio::event& e, sio::message::ptr response, const std::string& reason);
+	EuroScopePlugIn::CFlightPlan ResolveFlightPlanByCallsign(const std::string& callsign);
+	bool HandoffAcceptChecks(EuroScopePlugIn::CFlightPlan fp, sio::message::ptr response, sio::event& e);
+	bool HandoffRefuseChecks(EuroScopePlugIn::CFlightPlan fp, sio::message::ptr response, sio::event& e);
 	std::string AddRunwayToRoute(std::string runway, EuroScopePlugIn::CFlightPlan fp, bool departure = true);
 	static std::string SquawkGenerator(std::string);
 	void DirectTo(std::string waypoint, EuroScopePlugIn::CFlightPlan fp, bool newRoute);

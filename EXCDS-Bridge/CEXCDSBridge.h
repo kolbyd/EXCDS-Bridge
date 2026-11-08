@@ -18,7 +18,7 @@ public:
 
     // Listens to EuroScope
     void OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan FlightPlan);
-    void OnFlightPlanFlightStripPushed(EuroScopePlugIn::CFlightPlan fp, const char* sSenderController);
+    void OnFlightPlanFlightStripPushed(EuroScopePlugIn::CFlightPlan fp, const char* sSenderController, const char* sTargetController) override;
     void OnFlightPlanControllerAssignedDataUpdate(EuroScopePlugIn::CFlightPlan FlightPlan, int DataType);
     void OnFlightPlanDisconnect(EuroScopePlugIn::CFlightPlan FlightPlan);
     void OnTimer(int Counter);

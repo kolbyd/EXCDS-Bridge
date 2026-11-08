@@ -275,9 +275,10 @@ void CEXCDSBridge::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan
 
 void CEXCDSBridge::OnFlightPlanFlightStripPushed(
 	EuroScopePlugIn::CFlightPlan fp,
-	const char* sSenderController
+	const char* sSenderController,
+	const char* sTargetController
 ) {
-	MessageHandler::EmitFlightPlanPatch(fp, "FP_STRIP_PUSHED", -1, sSenderController, nullptr);
+	MessageHandler::EmitFlightPlanPatch(fp, "FP_STRIP_PUSHED", -1, sSenderController, sTargetController);
 }
 
 void CEXCDSBridge::OnPlaneInformationUpdate(const char* sCallsign,
